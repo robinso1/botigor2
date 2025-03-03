@@ -120,7 +120,10 @@ async def main() -> None:
         initialize_database()
         
         # Создаем Application и передаем ему токен бота
-        application = Application.builder().token(TELEGRAM_BOT_TOKEN).defaults(tzinfo=pytz.timezone('Europe/Moscow')).build()
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        
+        # Устанавливаем часовой пояс
+        application.bot.defaults = pytz.timezone('Europe/Moscow')
         
         # Добавляем обработчики
         application.add_handler(get_user_conversation_handler())
