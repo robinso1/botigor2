@@ -133,7 +133,7 @@ async def main() -> None:
         
         # Добавляем обработчик сообщений из чатов
         application.add_handler(MessageHandler(
-            filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
+            (filters.ChatType.GROUPS & filters.TEXT) & (~filters.COMMAND),
             handle_chat_message
         ))
         
