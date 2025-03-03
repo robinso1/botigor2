@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional, Union
 import threading
 import time
 import asyncio
+import pytz
 
 from telegram import Update, Bot
 from telegram.ext import (
@@ -119,7 +120,7 @@ async def main() -> None:
         initialize_database()
         
         # Создаем Application и передаем ему токен бота
-        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).tzinfo(pytz.timezone('Europe/Moscow')).build()
         
         # Добавляем обработчики
         application.add_handler(get_user_conversation_handler())
