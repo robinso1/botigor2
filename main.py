@@ -1,8 +1,10 @@
 import logging
-import asyncio
 import random
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Union
+import threading
+import time
+import asyncio
 
 from telegram import Update, Bot
 from telegram.ext import (
@@ -40,7 +42,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Обработчик ошибок"""
     logger.error(f"Ошибка при обработке обновления: {context.error}")
 
-async def initialize_database() -> None:
+def initialize_database() -> None:
     """Инициализирует базу данных и создает начальные данные"""
     # Инициализируем базу данных
     engine = init_db()
@@ -61,7 +63,7 @@ async def initialize_database() -> None:
     session.commit()
     logger.info("База данных инициализирована")
 
-async def demo_request_generator(application: Application) -> None:
+async def demo_request_generator(bot: Bot) -> None:
     """Генератор демо-заявок"""
     if not DEMO_MODE:
         return
@@ -114,12 +116,10 @@ async def main() -> None:
     """Основная функция приложения"""
     try:
         # Инициализируем базу данных
-        await initialize_database()
+        initialize_database()
         
-        # Создаем приложение
-        builder = Application.builder()
-        builder.token(TELEGRAM_BOT_TOKEN)
-        application = builder.build()
+        # Создаем Application и передаем ему токен бота
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
         
         # Добавляем обработчики
         application.add_handler(get_user_conversation_handler())
@@ -127,20 +127,23 @@ async def main() -> None:
         
         # Добавляем обработчик сообщений из чатов
         application.add_handler(MessageHandler(
-            filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
+            filters.CHAT_TYPE.GROUPS & filters.TEXT & ~filters.COMMAND,
             handle_chat_message
         ))
         
         # Добавляем обработчик ошибок
         application.add_error_handler(error_handler)
         
-        # Запускаем генератор демо-заявок в отдельной задаче
+        # Запускаем генератор демо-заявок в отдельном потоке
         if DEMO_MODE:
-            asyncio.create_task(demo_request_generator(application))
+            asyncio.create_task(demo_request_generator(application.bot))
         
         # Запускаем бота
-        logger.info("Запуск бота...")
-        await application.run_polling()
+        logger.info("Запуск системы распределения заявок...")
+        await application.start_polling(allowed_updates=Update.ALL_TYPES)
+        
+        # Останавливаем бота при нажатии Ctrl+C
+        await application.updater.stop()
         
     except Exception as e:
         logger.error(f"Ошибка при запуске бота: {e}")

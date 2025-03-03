@@ -2,14 +2,17 @@ import logging
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram.error import TelegramError
 
 from bot.models import get_session, User, Category, City, Request, Distribution
 from bot.services.user_service import UserService
 from bot.services.request_service import RequestService
 from bot.utils.demo_utils import generate_demo_request
 from config import ADMIN_IDS, DEFAULT_CATEGORIES, DEFAULT_CITIES
+from bot.handlers.user_handlers import show_main_menu
 
 logger = logging.getLogger(__name__)
 
@@ -42,28 +45,37 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     
     # Проверяем, является ли пользователь администратором
     if user.id not in ADMIN_IDS:
-        await update.callback_query.answer("У вас нет доступа к админ-панели")
-        return -1
+        if update.callback_query:
+            await update.callback_query.answer("У вас нет доступа к админ-панели")
+        else:
+            await update.message.reply_text("У вас нет доступа к админ-панели")
+        
+        # Возвращаемся в главное меню
+        return await show_main_menu(update, context)
     
-    # Создаем клавиатуру
+    # Создаем клавиатуру с кнопками внизу экрана
     keyboard = [
-        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users")],
-        [InlineKeyboardButton("🏷️ Категории", callback_data="admin_categories")],
-        [InlineKeyboardButton("🏙️ Города", callback_data="admin_cities")],
-        [InlineKeyboardButton("📋 Заявки", callback_data="admin_requests")],
-        [InlineKeyboardButton("➕ Добавить заявку", callback_data="admin_add_request")],
-        [InlineKeyboardButton("🎲 Создать демо-заявку", callback_data="admin_create_demo")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
+        ["📊 Статистика", "👥 Пользователи"],
+        ["🏷️ Категории", "🏙️ Города"],
+        ["📋 Заявки", "➕ Добавить заявку"],
+        ["🎲 Создать демо-заявку"],
+        ["🔙 Вернуться в главное меню"]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text="Админ-панель:",
-        reply_markup=reply_markup
-    )
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Панель администратора системы распределения заявок:",
+            reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            text="Панель администратора системы распределения заявок:",
+            reply_markup=reply_markup
+        )
     
     return ADMIN_MAIN
 
@@ -78,38 +90,38 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     # Формируем текст статистики
     stats_text = (
         f"📊 *Статистика*\n\n"
-        f"*Всего заявок*: {stats['total_requests']}\n\n"
-        f"*По статусам*:\n"
+        f"Всего заявок: {stats['total_requests']}\n"
+        f"Новых заявок: {stats['new_requests']}\n"
+        f"В работе: {stats['in_progress_requests']}\n"
+        f"Завершенных: {stats['completed_requests']}\n"
+        f"Отмененных: {stats['cancelled_requests']}\n\n"
+        f"Всего пользователей: {stats['total_users']}\n"
+        f"Активных пользователей: {stats['active_users']}\n"
+        f"Администраторов: {stats['admin_users']}\n\n"
+        f"Заявок за сегодня: {stats['today_requests']}\n"
+        f"Заявок за неделю: {stats['week_requests']}\n"
+        f"Заявок за месяц: {stats['month_requests']}"
     )
     
-    for status, count in stats['status_stats'].items():
-        stats_text += f"- {status}: {count}\n"
+    # Создаем клавиатуру для возврата в админ-панель
+    keyboard = [["🔙 Вернуться в админ-панель"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    stats_text += f"\n*По категориям*:\n"
-    
-    for category, count in stats['category_stats'].items():
-        stats_text += f"- {category}: {count}\n"
-    
-    stats_text += f"\n*По городам*:\n"
-    
-    for city, count in stats['city_stats'].items():
-        stats_text += f"- {city}: {count}\n"
-    
-    stats_text += f"\n*Всего распределений*: {stats['total_distributions']}"
-    
-    # Создаем клавиатуру
-    keyboard = [
-        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_admin")]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text=stats_text,
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    # Отправляем сообщение
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=stats_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            text=stats_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
     
     return ADMIN_STATS
 
@@ -132,19 +144,24 @@ async def admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if len(users) > 10:
         users_text += f"\n... и еще {len(users) - 10} пользователей"
     
-    # Создаем клавиатуру
-    keyboard = [
-        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_admin")]
-    ]
+    # Создаем клавиатуру для возврата в админ-панель
+    keyboard = [["🔙 Вернуться в админ-панель"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text=users_text,
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=users_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            text=users_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
     
     return ADMIN_USERS
 
@@ -164,30 +181,43 @@ async def admin_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     # Создаем клавиатуру
     keyboard = [
-        [InlineKeyboardButton("➕ Добавить категорию", callback_data="admin_add_category")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_admin")]
+        ["➕ Добавить категорию"],
+        ["🔙 Вернуться в админ-панель"]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text=categories_text,
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=categories_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            text=categories_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
     
     return ADMIN_CATEGORIES
 
 async def admin_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Запрашивает название новой категории"""
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text="Пожалуйста, введите название новой категории:",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Отмена", callback_data="back_to_categories")]
-        ])
-    )
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Пожалуйста, введите название новой категории:",
+            reply_markup=ReplyKeyboardMarkup([["🔙 Отмена"]], resize_keyboard=True)
+        )
+    else:
+        await update.message.reply_text(
+            text="Пожалуйста, введите название новой категории:",
+            reply_markup=ReplyKeyboardMarkup([["🔙 Отмена"]], resize_keyboard=True)
+        )
     
     return ADMIN_ADD_CATEGORY
 
@@ -230,30 +260,43 @@ async def admin_cities(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     # Создаем клавиатуру
     keyboard = [
-        [InlineKeyboardButton("➕ Добавить город", callback_data="admin_add_city")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_admin")]
+        ["➕ Добавить город"],
+        ["🔙 Вернуться в админ-панель"]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text=cities_text,
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=cities_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            text=cities_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
     
     return ADMIN_CITIES
 
 async def admin_add_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Запрашивает название нового города"""
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text="Пожалуйста, введите название нового города:",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Отмена", callback_data="back_to_cities")]
-        ])
-    )
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Пожалуйста, введите название нового города:",
+            reply_markup=ReplyKeyboardMarkup([["🔙 Отмена"]], resize_keyboard=True)
+        )
+    else:
+        await update.message.reply_text(
+            text="Пожалуйста, введите название нового города:",
+            reply_markup=ReplyKeyboardMarkup([["🔙 Отмена"]], resize_keyboard=True)
+        )
     
     return ADMIN_ADD_CITY
 
@@ -306,19 +349,27 @@ async def admin_requests(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Создаем клавиатуру
     keyboard = [
-        [InlineKeyboardButton("➕ Добавить заявку", callback_data="admin_add_request")],
-        [InlineKeyboardButton("🎲 Создать демо-заявку", callback_data="admin_create_demo")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_admin")]
+        ["➕ Добавить заявку"],
+        ["🎲 Создать демо-заявку"],
+        ["🔙 Вернуться в админ-панель"]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text=requests_text,
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=requests_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            text=requests_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
     
     return ADMIN_REQUESTS
 
@@ -329,14 +380,38 @@ async def admin_create_demo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     # Генерируем демо-заявку
     demo_data = generate_demo_request()
+    demo_data['is_demo'] = True
     
     # Создаем заявку
     request = request_service.create_request(demo_data)
     
-    await update.callback_query.answer("Демо-заявка успешно создана!")
+    # Распределяем заявку
+    distributions = request_service.distribute_request(request.id)
     
-    # Возвращаемся к списку заявок
-    return await admin_requests(update, context)
+    # Формируем сообщение об успехе
+    success_text = f"✅ Демо-заявка успешно создана и распределена!\n\n"
+    success_text += f"ID: {request.id}\n"
+    success_text += f"Клиент: {request.client_name}\n"
+    success_text += f"Телефон: {request.client_phone}\n"
+    success_text += f"Категория: {request.category.name if request.category else 'Не указана'}\n"
+    success_text += f"Город: {request.city.name if request.city else 'Не указан'}\n"
+    success_text += f"Распределена: {len(distributions)} пользователям"
+    
+    # Отправляем сообщение
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=success_text,
+            reply_markup=ReplyKeyboardMarkup([["🔙 Вернуться в админ-панель"]], resize_keyboard=True)
+        )
+    else:
+        await update.message.reply_text(
+            text=success_text,
+            reply_markup=ReplyKeyboardMarkup([["🔙 Вернуться в админ-панель"]], resize_keyboard=True)
+        )
+    
+    return ADMIN_MAIN
 
 async def admin_add_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Запрашивает данные для новой заявки"""
@@ -352,62 +427,94 @@ async def admin_add_request(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data['new_request'] = {}
     
     # Запрашиваем имя клиента
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text="Пожалуйста, введите имя клиента:",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Отмена", callback_data="back_to_requests")]
-        ])
-    )
+    if update.callback_query:
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Пожалуйста, введите имя клиента:",
+            reply_markup=ReplyKeyboardMarkup([["🔙 Отмена"]], resize_keyboard=True)
+        )
+    else:
+        await update.message.reply_text(
+            text="Пожалуйста, введите имя клиента:",
+            reply_markup=ReplyKeyboardMarkup([["🔙 Отмена"]], resize_keyboard=True)
+        )
     
     return ADMIN_ADD_REQUEST
 
 def get_admin_conversation_handler() -> ConversationHandler:
-    """Возвращает ConversationHandler для админ-команд"""
+    """Возвращает обработчик диалога с администратором"""
     return ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_panel, pattern="^admin$")],
+        entry_points=[CommandHandler('admin', admin_panel)],
         states={
             ADMIN_MAIN: [
-                CallbackQueryHandler(admin_stats, pattern="^admin_stats$"),
-                CallbackQueryHandler(admin_users, pattern="^admin_users$"),
-                CallbackQueryHandler(admin_categories, pattern="^admin_categories$"),
-                CallbackQueryHandler(admin_cities, pattern="^admin_cities$"),
-                CallbackQueryHandler(admin_requests, pattern="^admin_requests$"),
-                CallbackQueryHandler(admin_add_request, pattern="^admin_add_request$"),
-                CallbackQueryHandler(admin_create_demo, pattern="^admin_create_demo$"),
-                # Обработчик для возврата в главное меню будет добавлен позже
+                MessageHandler(filters.Regex('^📊 Статистика$'), admin_stats),
+                MessageHandler(filters.Regex('^👥 Пользователи$'), admin_users),
+                MessageHandler(filters.Regex('^🏷️ Категории$'), admin_categories),
+                MessageHandler(filters.Regex('^🏙️ Города$'), admin_cities),
+                MessageHandler(filters.Regex('^📋 Заявки$'), admin_requests),
+                MessageHandler(filters.Regex('^➕ Добавить заявку$'), admin_add_request),
+                MessageHandler(filters.Regex('^🎲 Создать демо-заявку$'), admin_create_demo),
+                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), lambda u, c: show_main_menu(u, c)),
+                # Оставляем обработчики для callback_query для обратной совместимости
+                CallbackQueryHandler(admin_stats, pattern='^admin_stats$'),
+                CallbackQueryHandler(admin_users, pattern='^admin_users$'),
+                CallbackQueryHandler(admin_categories, pattern='^admin_categories$'),
+                CallbackQueryHandler(admin_cities, pattern='^admin_cities$'),
+                CallbackQueryHandler(admin_requests, pattern='^admin_requests$'),
+                CallbackQueryHandler(admin_add_request, pattern='^admin_add_request$'),
+                CallbackQueryHandler(admin_create_demo, pattern='^admin_create_demo$'),
+                CallbackQueryHandler(lambda u, c: show_main_menu(u, c), pattern='^back_to_main$'),
             ],
             ADMIN_STATS: [
+                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
                 CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
             ],
             ADMIN_USERS: [
+                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
                 CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
             ],
             ADMIN_CATEGORIES: [
+                MessageHandler(filters.Regex('^➕ Добавить категорию$'), admin_add_category),
+                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
                 CallbackQueryHandler(admin_add_category, pattern="^admin_add_category$"),
                 CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
             ],
             ADMIN_ADD_CATEGORY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_category),
+                MessageHandler(filters.Regex('^🔙 Отмена$'), admin_categories),
+                MessageHandler(filters.text & ~filters.command, admin_save_category),
                 CallbackQueryHandler(admin_categories, pattern="^back_to_categories$"),
             ],
             ADMIN_CITIES: [
+                MessageHandler(filters.Regex('^➕ Добавить город$'), admin_add_city),
+                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
                 CallbackQueryHandler(admin_add_city, pattern="^admin_add_city$"),
                 CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
             ],
             ADMIN_ADD_CITY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_city),
+                MessageHandler(filters.Regex('^🔙 Отмена$'), admin_cities),
+                MessageHandler(filters.text & ~filters.command, admin_save_city),
                 CallbackQueryHandler(admin_cities, pattern="^back_to_cities$"),
             ],
             ADMIN_REQUESTS: [
+                MessageHandler(filters.Regex('^➕ Добавить заявку$'), admin_add_request),
+                MessageHandler(filters.Regex('^🎲 Создать демо-заявку$'), admin_create_demo),
+                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
                 CallbackQueryHandler(admin_add_request, pattern="^admin_add_request$"),
                 CallbackQueryHandler(admin_create_demo, pattern="^admin_create_demo$"),
                 CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
             ],
             ADMIN_ADD_REQUEST: [
-                # Обработчики для добавления заявки будут добавлены позже
+                MessageHandler(filters.Regex('^🔙 Отмена$'), admin_requests),
+                MessageHandler(filters.text & ~filters.command, lambda u, c: admin_save_city(u, c)),  # Заглушка, нужно реализовать
                 CallbackQueryHandler(admin_requests, pattern="^back_to_requests$"),
             ],
         },
-        fallbacks=[CallbackQueryHandler(admin_panel, pattern="^admin$")],
+        fallbacks=[CommandHandler('admin', admin_panel), CommandHandler('start', lambda u, c: show_main_menu(u, c))],
+        name="admin_conversation",
+        persistent=False
     )
+
+def admin_conversation_handler() -> ConversationHandler:
+    """Возвращает обработчик диалога с администратором (для совместимости)"""
+    return get_admin_conversation_handler()

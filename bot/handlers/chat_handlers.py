@@ -93,4 +93,4 @@ def extract_request_data(text: str) -> Optional[Dict[str, Any]]:
         "area": area,
         "description": description,
         "status": "новая"
-    } 
+    }

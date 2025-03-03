@@ -1,4 +1,4 @@
-python-telegram-bot==20.7
+python-telegram-bot==13.15
 python-dotenv==1.0.0
 SQLAlchemy==1.4.50
 alembic==1.13.1

@@ -165,7 +165,7 @@ class RequestService:
             distribution = Distribution(
                 request_id=request.id,
                 user_id=user.id,
-                status="отправлено",
+                status="новая",
                 created_at=datetime.utcnow()
             )
             self.session.add(distribution)
@@ -255,4 +255,62 @@ class RequestService:
             "category_stats": category_stats,
             "city_stats": city_stats,
             "total_distributions": total_distributions
-        } 
+        }
+    
+    def get_user_distributions(self, telegram_id: int) -> List[Distribution]:
+        """
+        Получает список распределений для пользователя
+        
+        Args:
+            telegram_id (int): Telegram ID пользователя
+        
+        Returns:
+            List[Distribution]: Список распределений
+        """
+        # Получаем пользователя по Telegram ID
+        user = self.session.query(User).filter(User.telegram_id == telegram_id).first()
+        if not user:
+            logger.warning(f"Пользователь с Telegram ID={telegram_id} не найден")
+            return []
+        
+        # Получаем распределения пользователя
+        distributions = self.session.query(Distribution).filter(
+            Distribution.user_id == user.id
+        ).order_by(Distribution.created_at.desc()).all()
+        
+        return distributions
+    
+    def get_distribution(self, distribution_id: int) -> Optional[Distribution]:
+        """
+        Получает распределение по ID
+        
+        Args:
+            distribution_id (int): ID распределения
+        
+        Returns:
+            Optional[Distribution]: Распределение или None, если распределение не найдено
+        """
+        return self.session.query(Distribution).filter(Distribution.id == distribution_id).first()
+    
+    def update_distribution_status(self, distribution_id: int, status: str) -> Optional[Distribution]:
+        """
+        Обновляет статус распределения
+        
+        Args:
+            distribution_id (int): ID распределения
+            status (str): Новый статус
+        
+        Returns:
+            Optional[Distribution]: Обновленное распределение или None, если распределение не найдено
+        """
+        distribution = self.get_distribution(distribution_id)
+        if not distribution:
+            logger.warning(f"Распределение с ID={distribution_id} не найдено")
+            return None
+        
+        distribution.status = status
+        distribution.updated_at = datetime.utcnow()
+        self.session.commit()
+        
+        logger.info(f"Обновлен статус распределения: ID={distribution.id}, статус={status}")
+        return distribution 

@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Any, List, Optional, Union, Callable
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 from bot.models import get_session
@@ -38,7 +39,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
     # Приветственное сообщение
     await update.message.reply_text(
-        f"Привет, {user.first_name}! Я бот Игорь для распределения заявок.\n\n"
+        f"Привет, {user.first_name}! Я бот по распределению заявок.\n\n"
         "Я буду отправлять вам заявки в соответствии с вашими настройками.\n"
         "Используйте меню для настройки профиля и просмотра заявок."
     )
@@ -50,29 +51,29 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Показывает главное меню"""
     user = update.effective_user
     
-    # Создаем клавиатуру
+    # Создаем клавиатуру с кнопками внизу экрана
     keyboard = [
-        [InlineKeyboardButton("📋 Мои заявки", callback_data="my_requests")],
-        [InlineKeyboardButton("👤 Профиль", callback_data="profile")],
-        [InlineKeyboardButton("⚙️ Настройки", callback_data="settings")]
+        ["📋 Мои заявки"],
+        ["👤 Профиль", "⚙️ Настройки"]
     ]
     
     # Добавляем кнопку админ-панели для администраторов
     if user.id in ADMIN_IDS:
-        keyboard.append([InlineKeyboardButton("🔐 Админ-панель", callback_data="admin")])
+        keyboard.append(["🔐 Админ-панель"])
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    # Определяем, нужно ли отправить новое сообщение или отредактировать существующее
+    # Определяем, нужно ли отправить новое сообщение или ответить на существующее
     if update.callback_query:
-        await update.callback_query.answer()
-        await update.callback_query.edit_message_text(
-            text="Главное меню:",
+        update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Главное меню системы распределения заявок:",
             reply_markup=reply_markup
         )
     else:
         await update.message.reply_text(
-            text="Главное меню:",
+            text="Главное меню системы распределения заявок:",
             reply_markup=reply_markup
         )
     
@@ -105,20 +106,36 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"Отклонено: {stats['status_stats'].get('отклонено', 0)}"
     )
     
-    # Создаем клавиатуру
-    keyboard = [
+    # Создаем клавиатуру для inline кнопок
+    inline_keyboard = [
         [InlineKeyboardButton("📱 Изменить телефон", callback_data="edit_phone")],
         [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    inline_markup = InlineKeyboardMarkup(inline_keyboard)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text=profile_text,
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    # Создаем клавиатуру для reply кнопок
+    reply_keyboard = [
+        ["📱 Изменить телефон"],
+        ["🔙 Вернуться в главное меню"]
+    ]
+    
+    reply_markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
+    
+    if update.callback_query:
+        # Проверяем, что callback_query не None перед вызовом answer()
+        update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text=profile_text,
+            reply_markup=inline_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            text=profile_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
     
     return PROFILE_MENU
 
@@ -134,26 +151,44 @@ async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     # Формируем текст настроек
     settings_text = (
         f"⚙️ *Настройки*\n\n"
-        f"Здесь вы можете настроить параметры получения заявок.\n\n"
         f"*Категории*: {', '.join([cat.name for cat in db_user.categories]) or 'Не выбраны'}\n"
-        f"*Города*: {', '.join([city.name for city in db_user.cities]) or 'Не выбраны'}"
+        f"*Города*: {', '.join([city.name for city in db_user.cities]) or 'Не выбраны'}\n"
+        f"*Телефон*: {db_user.phone or 'Не указан'}"
     )
     
-    # Создаем клавиатуру
-    keyboard = [
+    # Создаем клавиатуру для inline кнопок
+    inline_keyboard = [
         [InlineKeyboardButton("🏷️ Выбрать категории", callback_data="select_categories")],
         [InlineKeyboardButton("🏙️ Выбрать города", callback_data="select_cities")],
+        [InlineKeyboardButton("📱 Изменить телефон", callback_data="edit_phone")],
         [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    inline_markup = InlineKeyboardMarkup(inline_keyboard)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text=settings_text,
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    # Создаем клавиатуру для reply кнопок
+    reply_keyboard = [
+        ["🏷️ Выбрать категории", "🏙️ Выбрать города"],
+        ["📱 Изменить телефон"],
+        ["🔙 Вернуться в главное меню"]
+    ]
+    
+    reply_markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
+    
+    if update.callback_query:
+        # Проверяем, что callback_query не None перед вызовом answer()
+        update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text=settings_text,
+            reply_markup=inline_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            text=settings_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
     
     return SETTINGS_MENU
 
@@ -176,18 +211,33 @@ async def select_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Проверяем, выбрана ли категория пользователем
         is_selected = category in db_user.categories
         button_text = f"{'✅' if is_selected else '❌'} {category.name}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"category_{category.id}")])
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"toggle_category_{category.id}")])
     
     # Добавляем кнопку "Готово"
-    keyboard.append([InlineKeyboardButton("✅ Готово", callback_data="categories_done")])
+    keyboard.append([InlineKeyboardButton("✅ Готово", callback_data="back_to_settings")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text="Выберите категории заявок, которые хотите получать:",
-        reply_markup=reply_markup
-    )
+    # Создаем клавиатуру для reply кнопок
+    reply_keyboard = [["🔙 Вернуться в главное меню"]]
+    reply_markup_keyboard = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
+    
+    if update.callback_query:
+        update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text="Выберите категории заявок, которые хотите получать:",
+            reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            text="Выберите категории заявок, которые хотите получать:",
+            reply_markup=reply_markup
+        )
+        # Добавляем кнопку возврата в главное меню
+        await update.message.reply_text(
+            "Используйте кнопку ниже для возврата в главное меню:",
+            reply_markup=reply_markup_keyboard
+        )
     
     return CATEGORY_SELECTION
 
@@ -201,7 +251,7 @@ async def toggle_category(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     db_user = user_service.get_user_by_telegram_id(user.id)
     
     # Получаем ID категории из callback_data
-    category_id = int(update.callback_query.data.split("_")[1])
+    category_id = int(update.callback_query.data.split("_")[2])
     
     # Получаем категорию
     from bot.models import Category
@@ -240,18 +290,33 @@ async def select_cities(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         # Проверяем, выбран ли город пользователем
         is_selected = city in db_user.cities
         button_text = f"{'✅' if is_selected else '❌'} {city.name}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"city_{city.id}")])
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"toggle_city_{city.id}")])
     
     # Добавляем кнопку "Готово"
-    keyboard.append([InlineKeyboardButton("✅ Готово", callback_data="cities_done")])
+    keyboard.append([InlineKeyboardButton("✅ Готово", callback_data="back_to_settings")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text="Выберите города, по которым хотите получать заявки:",
-        reply_markup=reply_markup
-    )
+    # Создаем клавиатуру для reply кнопок
+    reply_keyboard = [["🔙 Вернуться в главное меню"]]
+    reply_markup_keyboard = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
+    
+    if update.callback_query:
+        update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text="Выберите города, в которых хотите получать заявки:",
+            reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            text="Выберите города, в которых хотите получать заявки:",
+            reply_markup=reply_markup
+        )
+        # Добавляем кнопку возврата в главное меню
+        await update.message.reply_text(
+            "Используйте кнопку ниже для возврата в главное меню:",
+            reply_markup=reply_markup_keyboard
+        )
     
     return CITY_SELECTION
 
@@ -265,7 +330,7 @@ async def toggle_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     db_user = user_service.get_user_by_telegram_id(user.id)
     
     # Получаем ID города из callback_data
-    city_id = int(update.callback_query.data.split("_")[1])
+    city_id = int(update.callback_query.data.split("_")[2])
     
     # Получаем город
     from bot.models import City
@@ -286,14 +351,27 @@ async def toggle_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return await select_cities(update, context)
 
 async def edit_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Запрашивает новый номер телефона"""
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text="Пожалуйста, отправьте ваш номер телефона в формате +7XXXXXXXXXX или нажмите на кнопку ниже:",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Отмена", callback_data="back_to_profile")]
-        ])
-    )
+    """Показывает форму редактирования телефона"""
+    # Создаем клавиатуру для reply кнопок
+    reply_keyboard = [["🔙 Вернуться в главное меню"]]
+    reply_markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
+    
+    if update.callback_query:
+        update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text="Введите ваш номер телефона в формате +7XXXXXXXXXX:"
+        )
+        # Отправляем дополнительное сообщение с кнопкой возврата
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Или используйте кнопку ниже для возврата в главное меню:",
+            reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            text="Введите ваш номер телефона в формате +7XXXXXXXXXX:",
+            reply_markup=reply_markup
+        )
     
     return PHONE_INPUT
 
@@ -312,7 +390,8 @@ async def save_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Обновляем номер телефона
     user_service.update_user(db_user.id, {"phone": phone})
     
-    await update.message.reply_text("Номер телефона успешно обновлен!")
+    # Отправляем сообщение об успешном обновлении
+    await update.message.reply_text(f"Номер телефона успешно обновлен!")
     
     # Возвращаемся в меню профиля
     return await profile_menu(update, context)
@@ -321,104 +400,146 @@ async def my_requests(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     """Показывает список заявок пользователя"""
     user = update.effective_user
     session = get_session()
-    user_service = UserService(session)
-    
-    # Получаем пользователя из базы данных
-    db_user = user_service.get_user_by_telegram_id(user.id)
+    request_service = RequestService(session)
     
     # Получаем распределения пользователя
-    from bot.models import Distribution
-    distributions = session.query(Distribution).filter(
-        Distribution.user_id == db_user.id
-    ).order_by(Distribution.created_at.desc()).limit(10).all()
+    distributions = request_service.get_user_distributions(user.id)
     
     if not distributions:
-        # Если у пользователя нет заявок
-        await update.callback_query.answer()
-        await update.callback_query.edit_message_text(
-            text="У вас пока нет заявок.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
-            ])
-        )
-        return MAIN_MENU
+        # Создаем клавиатуру
+        keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Отправляем сообщение
+        if update.callback_query:
+            update.callback_query.answer()
+            await update.callback_query.edit_message_text(
+                text="У вас пока нет заявок.",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                text="У вас пока нет заявок.",
+                reply_markup=ReplyKeyboardMarkup([["🔙 Вернуться в главное меню"]], resize_keyboard=True)
+            )
+        
+        return REQUEST_MENU
     
-    # Создаем клавиатуру с заявками
+    # Создаем список заявок
+    text = "📋 *Ваши заявки*:\n\n"
+    
+    # Создаем клавиатуру
     keyboard = []
+    
     for dist in distributions:
         request = dist.request
         status_emoji = {
-            "отправлено": "📩",
+            "отправлено": "📤",
             "просмотрено": "👁️",
             "принято": "✅",
-            "отклонено": "❌"
-        }.get(dist.status, "📩")
+            "отклонено": "❌",
+            "завершено": "🏁",
+            "отменено": "🚫"
+        }.get(dist.status, "❓")
         
-        button_text = f"{status_emoji} {request.client_name or 'Без имени'} - {request.status}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"request_{dist.id}")])
+        # Добавляем информацию о заявке
+        text += f"{status_emoji} *Заявка #{request.id}*\n"
+        text += f"Статус: {dist.status}\n"
+        if request.client_name:
+            text += f"Клиент: {request.client_name}\n"
+        if request.category:
+            text += f"Категория: {request.category.name}\n"
+        if request.city:
+            text += f"Город: {request.city.name}\n"
+        text += f"Дата: {request.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+        
+        # Добавляем кнопку для просмотра заявки
+        keyboard.append([InlineKeyboardButton(
+            f"Заявка #{request.id} ({dist.status})",
+            callback_data=f"request_{dist.id}"
+        )])
     
     # Добавляем кнопку "Назад"
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        text="Ваши заявки (последние 10):",
-        reply_markup=reply_markup
-    )
+    # Отправляем сообщение
+    if update.callback_query:
+        update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        # Для текстовых кнопок отправляем сначала список заявок с inline кнопками
+        await update.message.reply_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        # И добавляем кнопку возврата в главное меню
+        await update.message.reply_text(
+            "Выберите заявку или вернитесь в главное меню:",
+            reply_markup=ReplyKeyboardMarkup([["🔙 Вернуться в главное меню"]], resize_keyboard=True)
+        )
     
     return REQUEST_MENU
 
 async def show_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает детали заявки"""
     session = get_session()
+    request_service = RequestService(session)
     
     # Получаем ID распределения из callback_data
     distribution_id = int(update.callback_query.data.split("_")[1])
     
     # Получаем распределение
-    from bot.models import Distribution
-    distribution = session.query(Distribution).filter(Distribution.id == distribution_id).first()
+    distribution = request_service.get_distribution(distribution_id)
     
     if not distribution:
-        await update.callback_query.answer("Заявка не найдена")
+        update.callback_query.answer("Заявка не найдена")
         return await my_requests(update, context)
     
-    # Обновляем статус распределения на "просмотрено", если он был "отправлено"
-    if distribution.status == "отправлено":
+    # Обновляем статус распределения на "просмотрено", если он "новая"
+    if distribution.status == "новая":
+        request_service.update_distribution_status(distribution_id, "просмотрено")
         distribution.status = "просмотрено"
-        session.commit()
     
     # Получаем заявку
     request = distribution.request
     
-    # Формируем текст заявки
+    # Формируем текст деталей заявки
     request_text = (
         f"📋 *Заявка #{request.id}*\n\n"
-        f"*Клиент*: {request.client_name or 'Не указано'}\n"
-        f"*Телефон*: {request.client_phone or 'Не указано'}\n"
-        f"*Категория*: {request.category.name if request.category else 'Не указано'}\n"
-        f"*Город*: {request.city.name if request.city else 'Не указано'}\n"
-        f"*Адрес*: {request.address or 'Не указано'}\n"
-        f"*Площадь*: {request.area or 'Не указано'} м²\n"
-        f"*Статус*: {request.status}\n\n"
-        f"*Описание*:\n{request.description or 'Нет описания'}\n\n"
+        f"*Клиент*: {request.client_name or 'Не указан'}\n"
+        f"*Телефон*: {request.client_phone or 'Не указан'}\n"
+        f"*Категория*: {request.category.name if request.category else 'Не указана'}\n"
+        f"*Город*: {request.city.name if request.city else 'Не указан'}\n"
+        f"*Площадь*: {request.area or 'Не указана'} м²\n"
+        f"*Адрес*: {request.address or 'Не указан'}\n\n"
+        f"*Описание*:\n{request.description or 'Не указано'}\n\n"
+        f"*Статус*: {distribution.status}\n"
         f"*Дата создания*: {request.created_at.strftime('%d.%m.%Y %H:%M')}"
     )
     
     # Создаем клавиатуру
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ Принять", callback_data=f"accept_{distribution_id}"),
-            InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{distribution_id}")
-        ],
-        [InlineKeyboardButton("🔙 Назад к списку", callback_data="back_to_requests")]
-    ]
+    keyboard = []
+    
+    # Добавляем кнопки действий в зависимости от статуса
+    if distribution.status in ["новая", "просмотрено"]:
+        keyboard.append([
+            InlineKeyboardButton("✅ Принять", callback_data=f"accept_request_{distribution_id}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_request_{distribution_id}")
+        ])
+    
+    # Добавляем кнопку "Назад"
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_requests")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.callback_query.answer()
+    update.callback_query.answer()
     await update.callback_query.edit_message_text(
         text=request_text,
         reply_markup=reply_markup,
@@ -430,25 +551,13 @@ async def show_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def accept_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Принимает заявку"""
     session = get_session()
+    request_service = RequestService(session)
     
     # Получаем ID распределения из callback_data
-    distribution_id = int(update.callback_query.data.split("_")[1])
-    
-    # Получаем распределение
-    from bot.models import Distribution
-    distribution = session.query(Distribution).filter(Distribution.id == distribution_id).first()
-    
-    if not distribution:
-        await update.callback_query.answer("Заявка не найдена")
-        return await my_requests(update, context)
+    distribution_id = int(update.callback_query.data.split("_")[2])
     
     # Обновляем статус распределения на "принято"
-    distribution.status = "принято"
-    
-    # Обновляем статус заявки на "в работе"
-    distribution.request.status = "в работе"
-    
-    session.commit()
+    request_service.update_distribution_status(distribution_id, "принято")
     
     await update.callback_query.answer("Заявка принята!")
     
@@ -458,66 +567,89 @@ async def accept_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def reject_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Отклоняет заявку"""
     session = get_session()
+    request_service = RequestService(session)
     
     # Получаем ID распределения из callback_data
-    distribution_id = int(update.callback_query.data.split("_")[1])
-    
-    # Получаем распределение
-    from bot.models import Distribution
-    distribution = session.query(Distribution).filter(Distribution.id == distribution_id).first()
-    
-    if not distribution:
-        await update.callback_query.answer("Заявка не найдена")
-        return await my_requests(update, context)
+    distribution_id = int(update.callback_query.data.split("_")[2])
     
     # Обновляем статус распределения на "отклонено"
-    distribution.status = "отклонено"
-    session.commit()
+    request_service.update_distribution_status(distribution_id, "отклонено")
     
-    await update.callback_query.answer("Заявка отклонена")
+    await update.callback_query.answer("Заявка отклонена!")
     
     # Возвращаемся к списку заявок
     return await my_requests(update, context)
 
+async def show_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Показывает сообщение о необходимости использовать команду /admin"""
+    await update.message.reply_text("Используйте команду /admin для доступа к админ-панели")
+    return MAIN_MENU
+
 def get_user_conversation_handler() -> ConversationHandler:
-    """Возвращает ConversationHandler для пользовательских команд"""
+    """Возвращает обработчик диалога с пользователем"""
     return ConversationHandler(
-        entry_points=[CommandHandler("start", start_command)],
+        entry_points=[CommandHandler('start', start_command)],
         states={
             MAIN_MENU: [
-                CallbackQueryHandler(profile_menu, pattern="^profile$"),
-                CallbackQueryHandler(settings_menu, pattern="^settings$"),
-                CallbackQueryHandler(my_requests, pattern="^my_requests$"),
-                # Обработчик для админ-панели будет добавлен позже
+                MessageHandler(filters.Regex('^📋 Мои заявки$'), my_requests),
+                MessageHandler(filters.Regex('^👤 Профиль$'), profile_menu),
+                MessageHandler(filters.Regex('^⚙️ Настройки$'), settings_menu),
+                MessageHandler(filters.Regex('^🔐 Админ-панель$'), show_admin_message),
+                CallbackQueryHandler(my_requests, pattern='^my_requests$'),
+                CallbackQueryHandler(profile_menu, pattern='^profile$'),
+                CallbackQueryHandler(settings_menu, pattern='^settings$'),
+                CallbackQueryHandler(lambda u, c: u.callback_query.answer("Используйте команду /admin для доступа к админ-панели"), pattern='^admin$'),
             ],
             PROFILE_MENU: [
-                CallbackQueryHandler(edit_phone, pattern="^edit_phone$"),
-                CallbackQueryHandler(show_main_menu, pattern="^back_to_main$"),
+                MessageHandler(filters.Regex('^📱 Изменить телефон$'), edit_phone),
+                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
+                CallbackQueryHandler(edit_phone, pattern='^edit_phone$'),
+                CallbackQueryHandler(show_main_menu, pattern='^back_to_main$'),
             ],
             SETTINGS_MENU: [
-                CallbackQueryHandler(select_categories, pattern="^select_categories$"),
-                CallbackQueryHandler(select_cities, pattern="^select_cities$"),
-                CallbackQueryHandler(show_main_menu, pattern="^back_to_main$"),
+                MessageHandler(filters.Regex('^🏷️ Выбрать категории$'), select_categories),
+                MessageHandler(filters.Regex('^🏙️ Выбрать города$'), select_cities),
+                MessageHandler(filters.Regex('^📱 Изменить телефон$'), edit_phone),
+                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
+                CallbackQueryHandler(select_categories, pattern='^select_categories$'),
+                CallbackQueryHandler(select_cities, pattern='^select_cities$'),
+                CallbackQueryHandler(edit_phone, pattern='^edit_phone$'),
+                CallbackQueryHandler(show_main_menu, pattern='^back_to_main$'),
             ],
             CATEGORY_SELECTION: [
-                CallbackQueryHandler(toggle_category, pattern=r"^category_\d+$"),
-                CallbackQueryHandler(settings_menu, pattern="^categories_done$"),
+                CallbackQueryHandler(toggle_category, pattern='^toggle_category_'),
+                CallbackQueryHandler(settings_menu, pattern='^back_to_settings$'),
+                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
             ],
             CITY_SELECTION: [
-                CallbackQueryHandler(toggle_city, pattern=r"^city_\d+$"),
-                CallbackQueryHandler(settings_menu, pattern="^cities_done$"),
+                CallbackQueryHandler(toggle_city, pattern='^toggle_city_'),
+                CallbackQueryHandler(settings_menu, pattern='^back_to_settings$'),
+                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
             ],
             PHONE_INPUT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone),
-                CallbackQueryHandler(profile_menu, pattern="^back_to_profile$"),
+                MessageHandler(filters.Text & ~filters.Command & ~filters.Regex('^🔙 Вернуться в главное меню$'), save_phone),
+                CallbackQueryHandler(settings_menu, pattern='^back_to_settings$'),
+                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
             ],
             REQUEST_MENU: [
-                CallbackQueryHandler(show_request, pattern=r"^request_\d+$"),
-                CallbackQueryHandler(accept_request, pattern=r"^accept_\d+$"),
-                CallbackQueryHandler(reject_request, pattern=r"^reject_\d+$"),
-                CallbackQueryHandler(my_requests, pattern="^back_to_requests$"),
-                CallbackQueryHandler(show_main_menu, pattern="^back_to_main$"),
+                CallbackQueryHandler(show_request, pattern='^request_'),
+                CallbackQueryHandler(my_requests, pattern='^back_to_requests$'),
+                CallbackQueryHandler(show_main_menu, pattern='^back_to_main$'),
+                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
+            ],
+            REQUEST_STATUS_SELECTION: [
+                CallbackQueryHandler(accept_request, pattern='^accept_request_'),
+                CallbackQueryHandler(reject_request, pattern='^reject_request_'),
+                CallbackQueryHandler(my_requests, pattern='^back_to_requests$'),
+                CallbackQueryHandler(show_main_menu, pattern='^back_to_main$'),
+                MessageHandler(filters.Regex('^�� Вернуться в главное меню$'), show_main_menu),
             ],
         },
-        fallbacks=[CommandHandler("start", start_command)],
-    ) 
+        fallbacks=[CommandHandler('start', start_command)],
+        name="user_conversation",
+        persistent=False
+    )
+
+def user_conversation_handler() -> ConversationHandler:
+    """Возвращает обработчик диалога с пользователем (для совместимости)"""
+    return get_user_conversation_handler() 
