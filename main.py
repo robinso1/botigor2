@@ -117,43 +117,37 @@ async def demo_request_generator(bot: Bot) -> None:
 
 async def main() -> None:
     """Основная функция приложения"""
-    try:
-        # Инициализируем базу данных
-        initialize_database()
-        
-        # Создаем объект Defaults с часовым поясом
-        defaults = Defaults(tzinfo=pytz.timezone('Europe/Moscow'))
-        
-        # Создаем Application и передаем ему токен бота и настройки по умолчанию
-        application = Application.builder().token(TELEGRAM_BOT_TOKEN).defaults(defaults).build()
-        
-        # Добавляем обработчики
-        application.add_handler(get_user_conversation_handler())
-        application.add_handler(get_admin_conversation_handler())
-        
-        # Добавляем обработчик сообщений из чатов
-        application.add_handler(MessageHandler(
-            filters.ChatType.GROUPS & filters.TEXT,
-            handle_chat_message
-        ))
-        
-        # Добавляем обработчик ошибок
-        application.add_error_handler(error_handler)
-        
-        # Запускаем генератор демо-заявок в отдельном потоке
-        if DEMO_MODE:
-            asyncio.create_task(demo_request_generator(application.bot))
-        
-        # Запускаем бота
-        logger.info("Запуск системы распределения заявок...")
-        
-        # Запускаем бота и ждем, пока он не будет остановлен
-        await application.run_polling(allowed_updates=Update.ALL_TYPES)
-        
-    except Exception as e:
-        logger.error(f"Ошибка при запуске бота: {e}")
-        # Отправляем изменения в GitHub при ошибке
-        push_changes_to_github("Автоматическое обновление после ошибки")
+    # Инициализируем базу данных
+    initialize_database()
+    
+    # Создаем объект Defaults с часовым поясом
+    defaults = Defaults(tzinfo=pytz.timezone('Europe/Moscow'))
+    
+    # Создаем Application и передаем ему токен бота и настройки по умолчанию
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).defaults(defaults).build()
+    
+    # Добавляем обработчики
+    application.add_handler(get_user_conversation_handler())
+    application.add_handler(get_admin_conversation_handler())
+    
+    # Добавляем обработчик сообщений из чатов
+    application.add_handler(MessageHandler(
+        filters.ChatType.GROUPS & filters.TEXT,
+        handle_chat_message
+    ))
+    
+    # Добавляем обработчик ошибок
+    application.add_error_handler(error_handler)
+    
+    # Запускаем генератор демо-заявок в отдельном потоке
+    if DEMO_MODE:
+        asyncio.create_task(demo_request_generator(application.bot))
+    
+    # Запускаем бота
+    logger.info("Запуск системы распределения заявок...")
+    
+    # Запускаем бота и ждем, пока он не будет остановлен
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     try:
