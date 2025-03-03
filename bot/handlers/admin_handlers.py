@@ -482,7 +482,7 @@ def get_admin_conversation_handler() -> ConversationHandler:
             ],
             ADMIN_ADD_CATEGORY: [
                 MessageHandler(filters.Regex('^🔙 Отмена$'), admin_categories),
-                MessageHandler(filters.text & ~filters.command, admin_save_category),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_category),
                 CallbackQueryHandler(admin_categories, pattern="^back_to_categories$"),
             ],
             ADMIN_CITIES: [
@@ -493,7 +493,7 @@ def get_admin_conversation_handler() -> ConversationHandler:
             ],
             ADMIN_ADD_CITY: [
                 MessageHandler(filters.Regex('^🔙 Отмена$'), admin_cities),
-                MessageHandler(filters.text & ~filters.command, admin_save_city),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_city),
                 CallbackQueryHandler(admin_cities, pattern="^back_to_cities$"),
             ],
             ADMIN_REQUESTS: [
@@ -506,7 +506,7 @@ def get_admin_conversation_handler() -> ConversationHandler:
             ],
             ADMIN_ADD_REQUEST: [
                 MessageHandler(filters.Regex('^🔙 Отмена$'), admin_requests),
-                MessageHandler(filters.text & ~filters.command, lambda u, c: admin_save_city(u, c)),  # Заглушка, нужно реализовать
+                MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: admin_save_city(u, c)),  # Заглушка, нужно реализовать
                 CallbackQueryHandler(admin_requests, pattern="^back_to_requests$"),
             ],
         },

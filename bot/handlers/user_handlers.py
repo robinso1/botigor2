@@ -627,7 +627,7 @@ def get_user_conversation_handler() -> ConversationHandler:
                 MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
             ],
             PHONE_INPUT: [
-                MessageHandler(filters.Text & ~filters.Command & ~filters.Regex('^🔙 Вернуться в главное меню$'), save_phone),
+                MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex('^🔙 Вернуться в главное меню$'), save_phone),
                 CallbackQueryHandler(settings_menu, pattern='^back_to_settings$'),
                 MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
             ],
@@ -642,7 +642,7 @@ def get_user_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(reject_request, pattern='^reject_request_'),
                 CallbackQueryHandler(my_requests, pattern='^back_to_requests$'),
                 CallbackQueryHandler(show_main_menu, pattern='^back_to_main$'),
-                MessageHandler(filters.Regex('^�� Вернуться в главное меню$'), show_main_menu),
+                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), show_main_menu),
             ],
         },
         fallbacks=[CommandHandler('start', start_command)],
