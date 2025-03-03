@@ -6,6 +6,7 @@ import threading
 import time
 import asyncio
 import pytz
+from zoneinfo import ZoneInfo
 from telegram.ext import Defaults
 
 from telegram import Update, Bot
@@ -121,7 +122,7 @@ async def main() -> None:
         initialize_database()
         
         # Создаем объект Defaults с часовым поясом
-        defaults = Defaults(tzinfo=pytz.timezone('Europe/Moscow'))
+        defaults = Defaults(tzinfo=ZoneInfo('Europe/Moscow'))
         
         # Создаем Application и передаем ему токен бота и настройки по умолчанию
         application = Application.builder().token(TELEGRAM_BOT_TOKEN).defaults(defaults).build()
