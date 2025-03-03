@@ -6,6 +6,7 @@ import threading
 import time
 import asyncio
 import pytz
+from telegram.ext import Defaults
 
 from telegram import Update, Bot
 from telegram.ext import (
@@ -119,11 +120,11 @@ async def main() -> None:
         # Инициализируем базу данных
         initialize_database()
         
-        # Создаем Application и передаем ему токен бота
-        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        # Создаем объект Defaults с часовым поясом
+        defaults = Defaults(tzinfo=pytz.timezone('Europe/Moscow'))
         
-        # Устанавливаем часовой пояс
-        application.bot.defaults = pytz.timezone('Europe/Moscow')
+        # Создаем Application и передаем ему токен бота и настройки по умолчанию
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).defaults(defaults).build()
         
         # Добавляем обработчики
         application.add_handler(get_user_conversation_handler())
