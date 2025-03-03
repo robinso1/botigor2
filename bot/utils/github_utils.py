@@ -28,12 +28,12 @@ def push_changes_to_github(commit_message="Автоматическое обно
     """
     try:
         # Получаем текущую директорию проекта
-        current_dir = os.getcwd()
+        current_dir = os.path.abspath(os.getcwd())
         
         # Выполняем команды Git для отправки изменений
-        os.system(f'cd {current_dir} && git add .')
-        os.system(f'cd {current_dir} && git commit -m "{commit_message}"')
-        os.system(f'cd {current_dir} && git push origin main')
+        os.system(f'cd "{current_dir}" && git add .')
+        os.system(f'cd "{current_dir}" && git commit -m "{commit_message}"')
+        os.system(f'cd "{current_dir}" && git push origin main')
         
         logger.info(f"Изменения успешно отправлены в GitHub: {commit_message}")
         return True

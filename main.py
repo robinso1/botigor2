@@ -112,40 +112,40 @@ async def demo_request_generator(application: Application) -> None:
 
 async def main() -> None:
     """Основная функция приложения"""
-    # Инициализируем базу данных
-    await initialize_database()
-    
-    # Создаем приложение
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    
-    # Добавляем обработчики
-    application.add_handler(get_user_conversation_handler())
-    application.add_handler(get_admin_conversation_handler())
-    
-    # Добавляем обработчик сообщений из чатов
-    application.add_handler(MessageHandler(
-        filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
-        handle_chat_message
-    ))
-    
-    # Добавляем обработчик ошибок
-    application.add_error_handler(error_handler)
-    
-    # Запускаем генератор демо-заявок в отдельной задаче
-    if DEMO_MODE:
-        asyncio.create_task(demo_request_generator(application))
-    
-    # Запускаем бота
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-    
-    logger.info("Бот запущен")
-    
-    # Ждем завершения работы бота
-    await application.updater.stop()
-    await application.stop()
-    await application.shutdown()
+    try:
+        # Инициализируем базу данных
+        await initialize_database()
+        
+        # Создаем приложение
+        builder = Application.builder()
+        builder.token(TELEGRAM_BOT_TOKEN)
+        application = builder.build()
+        
+        # Добавляем обработчики
+        application.add_handler(get_user_conversation_handler())
+        application.add_handler(get_admin_conversation_handler())
+        
+        # Добавляем обработчик сообщений из чатов
+        application.add_handler(MessageHandler(
+            filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
+            handle_chat_message
+        ))
+        
+        # Добавляем обработчик ошибок
+        application.add_error_handler(error_handler)
+        
+        # Запускаем генератор демо-заявок в отдельной задаче
+        if DEMO_MODE:
+            asyncio.create_task(demo_request_generator(application))
+        
+        # Запускаем бота
+        logger.info("Запуск бота...")
+        await application.run_polling()
+        
+    except Exception as e:
+        logger.error(f"Ошибка при запуске бота: {e}")
+        # Отправляем изменения в GitHub при ошибке
+        push_changes_to_github("Автоматическое обновление после ошибки")
 
 if __name__ == "__main__":
     try:

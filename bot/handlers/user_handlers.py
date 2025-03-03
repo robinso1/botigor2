@@ -500,11 +500,11 @@ def get_user_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(show_main_menu, pattern="^back_to_main$"),
             ],
             CATEGORY_SELECTION: [
-                CallbackQueryHandler(toggle_category, pattern="^category_\d+$"),
+                CallbackQueryHandler(toggle_category, pattern=r"^category_\d+$"),
                 CallbackQueryHandler(settings_menu, pattern="^categories_done$"),
             ],
             CITY_SELECTION: [
-                CallbackQueryHandler(toggle_city, pattern="^city_\d+$"),
+                CallbackQueryHandler(toggle_city, pattern=r"^city_\d+$"),
                 CallbackQueryHandler(settings_menu, pattern="^cities_done$"),
             ],
             PHONE_INPUT: [
@@ -512,9 +512,9 @@ def get_user_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(profile_menu, pattern="^back_to_profile$"),
             ],
             REQUEST_MENU: [
-                CallbackQueryHandler(show_request, pattern="^request_\d+$"),
-                CallbackQueryHandler(accept_request, pattern="^accept_\d+$"),
-                CallbackQueryHandler(reject_request, pattern="^reject_\d+$"),
+                CallbackQueryHandler(show_request, pattern=r"^request_\d+$"),
+                CallbackQueryHandler(accept_request, pattern=r"^accept_\d+$"),
+                CallbackQueryHandler(reject_request, pattern=r"^reject_\d+$"),
                 CallbackQueryHandler(my_requests, pattern="^back_to_requests$"),
                 CallbackQueryHandler(show_main_menu, pattern="^back_to_main$"),
             ],
