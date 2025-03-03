@@ -146,10 +146,9 @@ async def main() -> None:
         
         # Запускаем бота
         logger.info("Запуск системы распределения заявок...")
-        await application.start_polling(allowed_updates=Update.ALL_TYPES)
         
-        # Останавливаем бота при нажатии Ctrl+C
-        await application.updater.stop()
+        # Запускаем бота и ждем, пока он не будет остановлен
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
         logger.error(f"Ошибка при запуске бота: {e}")
