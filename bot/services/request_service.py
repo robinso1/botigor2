@@ -301,12 +301,12 @@ class RequestService:
         query = self.session.query(User).filter(User.is_active == True)
         
         # Фильтр по категории
-        if request.category:
-            query = query.filter(User.categories.any(id=request.category.id))
+        if request.category_id:
+            query = query.join(User.categories).filter(Category.id == request.category_id)
             
         # Фильтр по городу
-        if request.city:
-            query = query.filter(User.cities.any(id=request.city.id))
+        if request.city_id:
+            query = query.join(User.cities).filter(City.id == request.city_id)
             
         # Получаем всех подходящих пользователей
         users = query.all()
@@ -314,14 +314,16 @@ class RequestService:
         # Если нет пользователей с точным совпадением, ищем с частичным совпадением
         if not users:
             # Пользователи с подходящей категорией или городом
-            query = self.session.query(User).filter(
-                User.is_active == True,
-                or_(
-                    User.categories.any(id=request.category.id) if request.category else False,
-                    User.cities.any(id=request.city.id) if request.city else False
-                )
-            )
-            users = query.all()
+            query = self.session.query(User).filter(User.is_active == True)
+            
+            if request.category_id:
+                query = query.join(User.categories).filter(Category.id == request.category_id)
+                users = query.all()
+                
+            if not users and request.city_id:
+                query = self.session.query(User).filter(User.is_active == True)
+                query = query.join(User.cities).filter(City.id == request.city_id)
+                users = query.all()
             
         # Если все еще нет пользователей, возвращаем всех активных
         if not users:
