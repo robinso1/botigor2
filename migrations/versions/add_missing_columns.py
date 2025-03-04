@@ -18,11 +18,11 @@ depends_on = None
 
 def upgrade() -> None:
     # Добавляем колонку rating в таблицу users
-    op.add_column('users', sa.Column('rating', sa.Float, default=0.0))
+    op.add_column('users', sa.Column('rating', sa.Float(), server_default=sa.text('0.0')))
     
     # Добавляем колонки response_time и is_converted в таблицу distributions
-    op.add_column('distributions', sa.Column('response_time', sa.Integer, nullable=True))
-    op.add_column('distributions', sa.Column('is_converted', sa.Boolean, default=False))
+    op.add_column('distributions', sa.Column('response_time', sa.Integer(), nullable=True))
+    op.add_column('distributions', sa.Column('is_converted', sa.Boolean(), server_default=sa.text('0')))
 
 
 def downgrade() -> None:
