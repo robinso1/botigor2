@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 
 from bot.models import Request, User, Category, City, Distribution
-from config import DEFAULT_DISTRIBUTION_INTERVAL, DEFAULT_USERS_PER_REQUEST, DEFAULT_MAX_DISTRIBUTIONS, RESERVE_USERS_PER_REQUEST
+from config import DEFAULT_DISTRIBUTION_INTERVAL, DEFAULT_USERS_PER_REQUEST, DEFAULT_MAX_DISTRIBUTIONS, RESERVE_USERS_PER_REQUEST, DEMO_PHONE_MASK_PERCENT
+from bot.utils.security_utils import encrypt_personal_data, mask_phone_number, log_security_event
+from bot.utils.crm_utils import send_to_crm
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +42,25 @@ class RequestService:
             if not city:
                 logger.warning(f"Город '{data['city']}' не найден")
         
+        # Шифруем персональные данные
+        client_name = data.get("client_name")
+        client_phone = data.get("client_phone")
+        
+        if not data.get("is_demo"):
+            # Для реальных заявок шифруем данные
+            encrypted_name = encrypt_personal_data(client_name) if client_name else None
+            encrypted_phone = encrypt_personal_data(client_phone) if client_phone else None
+        else:
+            # Для демо-заявок маскируем телефон
+            encrypted_name = client_name
+            encrypted_phone = mask_phone_number(client_phone, DEMO_PHONE_MASK_PERCENT) if client_phone else None
+        
         # Создаем заявку
         request = Request(
             source_chat_id=data.get("source_chat_id"),
             source_message_id=data.get("source_message_id"),
-            client_name=data.get("client_name"),
-            client_phone=data.get("client_phone"),
+            client_name=encrypted_name,
+            client_phone=encrypted_phone,
             description=data.get("description"),
             status=data.get("status", "новая"),
             area=data.get("area"),
@@ -58,6 +73,31 @@ class RequestService:
         
         self.session.add(request)
         self.session.commit()
+        
+        # Логируем создание заявки
+        log_security_event(
+            "request_created",
+            data.get("created_by", 0),
+            {
+                "request_id": request.id,
+                "is_demo": request.is_demo,
+                "category": category.name if category else None,
+                "city": city.name if city else None
+            }
+        )
+        
+        # Отправляем данные в CRM
+        if not request.is_demo:
+            crm_data = {
+                "id": request.id,
+                "client_name": client_name,  # Отправляем незашифрованные данные
+                "client_phone": client_phone,
+                "description": request.description,
+                "category_id": request.category_id,
+                "address": request.address,
+                "area": request.area
+            }
+            send_to_crm(crm_data)
         
         logger.info(f"Создана новая заявка: ID={request.id}, клиент={request.client_name}")
         return request
