@@ -1,11 +1,12 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Table, Text, JSON, create_engine
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Table, Text, JSON, create_engine, Enum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from datetime import datetime
 import json
 from typing import List, Dict, Any, Optional
+import enum
 
-from config import DATABASE_URL
+from config import DATABASE_URL, REQUEST_STATUSES
 
 # Создание базового класса для моделей
 Base = declarative_base()
@@ -26,6 +27,25 @@ user_city = Table(
     Column('city_id', Integer, ForeignKey('cities.id'), primary_key=True)
 )
 
+# Связующая таблица для отношения многие-ко-многим между заявками и пакетами услуг
+request_package = Table(
+    'request_package',
+    Base.metadata,
+    Column('request_id', Integer, ForeignKey('requests.id'), primary_key=True),
+    Column('package_id', Integer, ForeignKey('service_packages.id'), primary_key=True)
+)
+
+class RequestStatus(enum.Enum):
+    """Статусы заявок"""
+    NEW = "новая"
+    ACTUAL = "актуальная"
+    NOT_ACTUAL = "неактуальная"
+    IN_PROGRESS = "в работе"
+    MEASUREMENT = "замер"
+    CLIENT_REJECTED = "отказ клиента"
+    COMPLETED = "завершена"
+    PENDING = "ожидание подтверждения"
+
 class User(Base):
     """Модель пользователя бота"""
     __tablename__ = 'users'
@@ -40,11 +60,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_activity = Column(DateTime, default=datetime.utcnow)
+    rating = Column(Float, default=0.0)  # Рейтинг пользователя
     
     # Отношения
     categories = relationship("Category", secondary=user_category, back_populates="users")
     cities = relationship("City", secondary=user_city, back_populates="users")
     distributions = relationship("Distribution", back_populates="user")
+    statistics = relationship("UserStatistics", back_populates="user", uselist=False)
     
     def __repr__(self):
         return f"<User(id={self.id}, telegram_id={self.telegram_id}, username={self.username})>"
@@ -57,10 +79,12 @@ class Category(Base):
     name = Column(String(100), unique=True, nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
+    parent_id = Column(Integer, ForeignKey('categories.id'), nullable=True)
     
     # Отношения
     users = relationship("User", secondary=user_category, back_populates="categories")
     requests = relationship("Request", back_populates="category")
+    subcategories = relationship("Category", backref=relationship("Category", remote_side=[id]))
     
     def __repr__(self):
         return f"<Category(id={self.id}, name={self.name})>"
@@ -94,6 +118,22 @@ class City(Base):
     def __repr__(self):
         return f"<City(id={self.id}, name={self.name})>"
 
+class ServicePackage(Base):
+    """Модель пакета услуг"""
+    __tablename__ = 'service_packages'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    services = Column(JSON, nullable=False)  # Список ID категорий услуг в пакете
+    
+    # Отношения
+    requests = relationship("Request", secondary=request_package, back_populates="packages")
+    
+    def __repr__(self):
+        return f"<ServicePackage(id={self.id}, name={self.name})>"
+
 class Request(Base):
     """Модель заявки"""
     __tablename__ = 'requests'
@@ -104,12 +144,15 @@ class Request(Base):
     client_name = Column(String(100), nullable=True)
     client_phone = Column(String(20), nullable=True)
     description = Column(Text, nullable=True)
-    status = Column(String(50), default="новая")
+    status = Column(Enum(RequestStatus), default=RequestStatus.NEW)
     area = Column(Float, nullable=True)  # Площадь помещения
     address = Column(String(255), nullable=True)
     is_demo = Column(Boolean, default=False)  # Флаг демо-заявки
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    estimated_cost = Column(Float, nullable=True)  # Предполагаемая стоимость
+    crm_id = Column(String(100), nullable=True)  # ID в CRM-системе
+    crm_status = Column(String(50), nullable=True)  # Статус в CRM-системе
     
     # Внешние ключи
     category_id = Column(Integer, ForeignKey('categories.id'), nullable=True)
@@ -119,6 +162,7 @@ class Request(Base):
     category = relationship("Category", back_populates="requests")
     city = relationship("City", back_populates="requests")
     distributions = relationship("Distribution", back_populates="request")
+    packages = relationship("ServicePackage", secondary=request_package, back_populates="requests")
     
     # Дополнительные данные в формате JSON
     extra_data = Column(JSON, nullable=True)
@@ -137,6 +181,8 @@ class Distribution(Base):
     status = Column(String(50), default="отправлено")  # отправлено, просмотрено, принято, отклонено
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    response_time = Column(Integer, nullable=True)  # Время ответа в секундах
+    is_converted = Column(Boolean, default=False)  # Флаг успешной конверсии
     
     # Отношения
     request = relationship("Request", back_populates="distributions")
@@ -144,6 +190,25 @@ class Distribution(Base):
     
     def __repr__(self):
         return f"<Distribution(id={self.id}, request_id={self.request_id}, user_id={self.user_id}, status={self.status})>"
+
+class UserStatistics(Base):
+    """Модель статистики пользователя"""
+    __tablename__ = 'user_statistics'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), unique=True, nullable=False)
+    total_requests = Column(Integer, default=0)  # Всего полученных заявок
+    processed_requests = Column(Integer, default=0)  # Обработанных заявок
+    successful_requests = Column(Integer, default=0)  # Успешно завершенных заявок
+    avg_response_time = Column(Float, default=0.0)  # Среднее время ответа в секундах
+    conversion_rate = Column(Float, default=0.0)  # Процент успешных конверсий
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Отношения
+    user = relationship("User", back_populates="statistics")
+    
+    def __repr__(self):
+        return f"<UserStatistics(user_id={self.user_id}, total_requests={self.total_requests})>"
 
 class Setting(Base):
     """Модель настроек бота"""

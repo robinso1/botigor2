@@ -3,6 +3,7 @@ from bot.utils.demo_utils import generate_demo_request, should_generate_demo_req
 from bot.utils.security_utils import (
     check_spam,
     encrypt_personal_data,
+    decrypt_personal_data,
     mask_phone_number,
     log_security_event,
     verify_user_access
@@ -17,6 +18,7 @@ __all__ = [
     'should_generate_demo_request',
     'check_spam',
     'encrypt_personal_data',
+    'decrypt_personal_data',
     'mask_phone_number',
     'log_security_event',
     'verify_user_access',
