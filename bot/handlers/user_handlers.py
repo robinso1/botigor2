@@ -25,59 +25,94 @@ logger = logging.getLogger(__name__)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обработчик команды /start"""
-    user = update.effective_user
-    session = get_session()
-    user_service = UserService(session)
-    
-    # Получаем или создаем пользователя
-    db_user = user_service.get_or_create_user(
-        telegram_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name
-    )
-    
-    # Приветственное сообщение
-    await update.message.reply_text(
-        f"Привет, {user.first_name}! Я бот по распределению заявок.\n\n"
-        "Я буду отправлять вам заявки в соответствии с вашими настройками.\n"
-        "Используйте меню для настройки профиля и просмотра заявок."
-    )
-    
-    # Показываем главное меню
-    return await show_main_menu(update, context)
+    try:
+        logger.info(f"Получена команда /start от пользователя {update.effective_user.id}")
+        user = update.effective_user
+        session = get_session()
+        
+        logger.info("Создаем экземпляр UserService")
+        user_service = UserService(session)
+        
+        # Получаем или создаем пользователя
+        logger.info(f"Получаем или создаем пользователя с ID {user.id}")
+        db_user = user_service.get_or_create_user(
+            telegram_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name
+        )
+        logger.info(f"Пользователь получен/создан: {db_user.id}")
+        
+        # Приветственное сообщение
+        logger.info("Отправляем приветственное сообщение")
+        await update.message.reply_text(
+            f"Привет, {user.first_name}! Я бот по распределению заявок.\n\n"
+            "Я буду отправлять вам заявки в соответствии с вашими настройками.\n"
+            "Используйте меню для настройки профиля и просмотра заявок."
+        )
+        
+        # Показываем главное меню
+        logger.info("Переходим к показу главного меню")
+        return await show_main_menu(update, context)
+    except Exception as e:
+        logger.error(f"Ошибка в обработчике /start: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "Произошла ошибка при обработке команды. Пожалуйста, попробуйте еще раз или обратитесь к администратору."
+        )
+        return MAIN_MENU
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает главное меню"""
-    user = update.effective_user
-    
-    # Создаем клавиатуру с кнопками внизу экрана
-    keyboard = [
-        ["📋 Мои заявки"],
-        ["👤 Профиль", "⚙️ Настройки"]
-    ]
-    
-    # Добавляем кнопку админ-панели для администраторов
-    if user.id in ADMIN_IDS:
-        keyboard.append(["🔐 Админ-панель"])
-    
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
-    # Определяем, нужно ли отправить новое сообщение или ответить на существующее
-    if update.callback_query:
-        update.callback_query.answer()
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="Главное меню системы распределения заявок:",
-            reply_markup=reply_markup
-        )
-    else:
-        await update.message.reply_text(
-            text="Главное меню системы распределения заявок:",
-            reply_markup=reply_markup
-        )
-    
-    return MAIN_MENU
+    try:
+        logger.info(f"Вызвана функция show_main_menu для пользователя {update.effective_user.id}")
+        user = update.effective_user
+        
+        # Создаем клавиатуру с кнопками внизу экрана
+        keyboard = [
+            ["📋 Мои заявки"],
+            ["👤 Профиль", "⚙️ Настройки"]
+        ]
+        
+        # Добавляем кнопку админ-панели для администраторов
+        if user.id in ADMIN_IDS:
+            logger.info(f"Пользователь {user.id} является администратором, добавляем кнопку админ-панели")
+            keyboard.append(["🔐 Админ-панель"])
+        
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        # Определяем, нужно ли отправить новое сообщение или ответить на существующее
+        if update.callback_query:
+            logger.info("Обрабатываем callback_query")
+            update.callback_query.answer()
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Главное меню системы распределения заявок:",
+                reply_markup=reply_markup
+            )
+        else:
+            logger.info("Отправляем сообщение с главным меню")
+            await update.message.reply_text(
+                text="Главное меню системы распределения заявок:",
+                reply_markup=reply_markup
+            )
+        
+        logger.info("Главное меню успешно отображено")
+        return MAIN_MENU
+    except Exception as e:
+        logger.error(f"Ошибка в функции show_main_menu: {str(e)}", exc_info=True)
+        try:
+            if update.callback_query:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="Произошла ошибка при отображении меню. Пожалуйста, попробуйте еще раз или используйте команду /start."
+                )
+            else:
+                await update.message.reply_text(
+                    text="Произошла ошибка при отображении меню. Пожалуйста, попробуйте еще раз или используйте команду /start."
+                )
+        except Exception:
+            logger.error("Не удалось отправить сообщение об ошибке", exc_info=True)
+        return MAIN_MENU
 
 async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает меню профиля"""
