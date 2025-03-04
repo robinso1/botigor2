@@ -20,20 +20,14 @@ from telegram.ext import (
     filters,
 )
 
-from bot.models import init_db, get_session, Category, City, Request
-from bot.handlers import get_user_conversation_handler, get_admin_conversation_handler, handle_chat_message
+from bot.handlers.admin_handlers import get_admin_conversation_handler
+from bot.handlers.user_handlers import get_user_conversation_handler, show_main_menu
+from bot.handlers.chat_handlers import handle_chat_message
+from bot.utils.github_utils import start_github_sync
+from bot.models import init_db, get_session
 from bot.services.request_service import RequestService
 from bot.utils.demo_utils import generate_demo_request, should_generate_demo_request
-from bot.utils.github_utils import push_changes_to_github, start_github_sync
-from config import (
-    TELEGRAM_BOT_TOKEN,
-    ADMIN_IDS,
-    MONITORED_CHATS,
-    DEFAULT_CATEGORIES,
-    DEFAULT_CITIES,
-    DEMO_MODE,
-    DEMO_REQUESTS_PER_DAY,
-)
+from config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, DEMO_MODE
 
 # Настройка логирования
 logging.basicConfig(
@@ -156,6 +150,19 @@ def main() -> None:
         
         # Добавляем обработчик ошибок
         application.add_error_handler(error_handler)
+        
+        # Добавляем отдельный обработчик команды /start для диагностики
+        async def direct_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+            logger.info(f"Прямой обработчик /start вызван пользователем {update.effective_user.id}")
+            await update.message.reply_text(
+                f"Привет, {update.effective_user.first_name}! Это прямой обработчик команды /start.\n"
+                "Если вы видите это сообщение, значит основной обработчик не работает.\n"
+                "Попробуйте использовать команду /menu для доступа к главному меню."
+            )
+        
+        application.add_handler(CommandHandler('direct_start', direct_start_handler))
+        application.add_handler(CommandHandler('menu', lambda u, c: show_main_menu(u, c)))
+        application.add_handler(CommandHandler('start', direct_start_handler))
         
         # Запускаем синхронизацию с GitHub
         # start_github_sync()  # Отключено, так как вызывает проблемы
