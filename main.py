@@ -23,11 +23,17 @@ from telegram.ext import (
 from bot.handlers.admin_handlers import get_admin_conversation_handler
 from bot.handlers.user_handlers import get_user_conversation_handler, show_main_menu
 from bot.handlers.chat_handlers import handle_chat_message
-from bot.utils.github_utils import start_github_sync
-from bot.models import init_db, get_session
+from bot.utils.github_utils import start_github_sync, push_changes_to_github
+from bot.models import init_db, get_session, Category, City
 from bot.services.request_service import RequestService
 from bot.utils.demo_utils import generate_demo_request, should_generate_demo_request
-from config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, DEMO_MODE
+from config import (
+    TELEGRAM_BOT_TOKEN, 
+    ADMIN_IDS, 
+    DEMO_MODE,
+    DEFAULT_CATEGORIES,
+    DEFAULT_CITIES,
+)
 
 # Настройка логирования
 logging.basicConfig(
