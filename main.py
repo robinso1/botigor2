@@ -158,7 +158,7 @@ def main() -> None:
         application.add_error_handler(error_handler)
         
         # Запускаем синхронизацию с GitHub
-        start_github_sync()
+        # start_github_sync()  # Отключено, так как вызывает проблемы
         
         # Запускаем бота
         logger.info("Запуск системы распределения заявок...")
