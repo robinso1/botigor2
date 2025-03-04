@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Table, Text, JSON, create_engine, Enum
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship, sessionmaker, backref
 from datetime import datetime
 import json
 from typing import List, Dict, Any, Optional
@@ -84,7 +84,7 @@ class Category(Base):
     # Отношения
     users = relationship("User", secondary=user_category, back_populates="categories")
     requests = relationship("Request", back_populates="category")
-    subcategories = relationship("Category", backref=relationship("Category", remote_side=[id]))
+    subcategories = relationship("Category", backref=backref("parent", remote_side=[id]))
     
     def __repr__(self):
         return f"<Category(id={self.id}, name={self.name})>"
