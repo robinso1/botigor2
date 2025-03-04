@@ -133,6 +133,10 @@ def main() -> None:
         # Инициализируем базу данных
         initialize_database()
         
+        # Отладочный вывод для проверки токена
+        logger.info(f"TELEGRAM_BOT_TOKEN: {TELEGRAM_BOT_TOKEN if TELEGRAM_BOT_TOKEN else 'Токен не найден'}")
+        logger.info(f"Длина токена: {len(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else 0}")
+        
         # Создаем объект Defaults с часовым поясом
         defaults = Defaults(tzinfo=pytz.timezone('Europe/Moscow'))
         
