@@ -6,6 +6,7 @@ import threading
 import time
 import asyncio
 import pytz
+import traceback
 from zoneinfo import ZoneInfo
 from telegram.ext import Defaults
 
@@ -128,49 +129,59 @@ async def demo_request_generator(bot: Bot) -> None:
 
 def main() -> None:
     """Основная функция приложения"""
-    # Инициализируем базу данных
-    initialize_database()
-    
-    # Создаем объект Defaults с часовым поясом
-    defaults = Defaults(tzinfo=pytz.timezone('Europe/Moscow'))
-    
-    # Создаем Application и передаем ему токен бота и настройки по умолчанию
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).defaults(defaults).build()
-    
-    # Добавляем обработчики диалогов
-    application.add_handler(get_user_conversation_handler())
-    application.add_handler(get_admin_conversation_handler())
-    
-    # Добавляем обработчик сообщений из чатов
-    application.add_handler(MessageHandler(
-        filters.ChatType.GROUPS & filters.TEXT,
-        handle_chat_message
-    ))
-    
-    # Добавляем обработчик ошибок
-    application.add_error_handler(error_handler)
-    
-    # Запускаем синхронизацию с GitHub
-    start_github_sync()
-    
-    # Запускаем бота
-    logger.info("Запуск системы распределения заявок...")
-    logger.info(f"Токен бота: {TELEGRAM_BOT_TOKEN[:5]}...{TELEGRAM_BOT_TOKEN[-5:]}")
-    
-    # Запускаем демо-генератор заявок в отдельном потоке
-    if DEMO_MODE:
-        # Создаем и запускаем демо-генератор в отдельном потоке
-        demo_thread = threading.Thread(
-            target=lambda: asyncio.run(demo_request_generator(application.bot)),
-            daemon=True
-        )
-        demo_thread.start()
-        logger.info("Демо-генератор заявок запущен")
-    
-    # Запускаем бота и ждем, пока он не будет остановлен
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
-    
-    logger.info("Бот остановлен")
+    try:
+        # Инициализируем базу данных
+        initialize_database()
+        
+        # Создаем объект Defaults с часовым поясом
+        defaults = Defaults(tzinfo=pytz.timezone('Europe/Moscow'))
+        
+        # Создаем Application и передаем ему токен бота и настройки по умолчанию
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).defaults(defaults).build()
+        
+        # Добавляем обработчики диалогов
+        logger.info("Добавляем обработчик пользовательских диалогов")
+        user_handler = get_user_conversation_handler()
+        application.add_handler(user_handler)
+        
+        logger.info("Добавляем обработчик админских диалогов")
+        admin_handler = get_admin_conversation_handler()
+        application.add_handler(admin_handler)
+        
+        # Добавляем обработчик сообщений из чатов
+        application.add_handler(MessageHandler(
+            filters.ChatType.GROUPS & filters.TEXT,
+            handle_chat_message
+        ))
+        
+        # Добавляем обработчик ошибок
+        application.add_error_handler(error_handler)
+        
+        # Запускаем синхронизацию с GitHub
+        start_github_sync()
+        
+        # Запускаем бота
+        logger.info("Запуск системы распределения заявок...")
+        logger.info(f"Токен бота: {TELEGRAM_BOT_TOKEN[:5]}...{TELEGRAM_BOT_TOKEN[-5:]}")
+        
+        # Запускаем демо-генератор заявок в отдельном потоке
+        if DEMO_MODE:
+            # Создаем и запускаем демо-генератор в отдельном потоке
+            demo_thread = threading.Thread(
+                target=lambda: asyncio.run(demo_request_generator(application.bot)),
+                daemon=True
+            )
+            demo_thread.start()
+            logger.info("Демо-генератор заявок запущен")
+        
+        # Запускаем бота и ждем, пока он не будет остановлен
+        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        
+        logger.info("Бот остановлен")
+    except Exception as e:
+        logger.error(f"Ошибка в main(): {e}")
+        logger.error(traceback.format_exc())
+        raise
 
 if __name__ == "__main__":
     try:
@@ -179,5 +190,6 @@ if __name__ == "__main__":
         logger.info("Бот остановлен пользователем")
     except Exception as e:
         logger.error(f"Ошибка при запуске бота: {e}")
+        logger.error(traceback.format_exc())
         # Отправляем изменения в GitHub при ошибке
         push_changes_to_github("Автоматическое обновление после ошибки") 
