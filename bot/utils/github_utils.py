@@ -2,7 +2,9 @@ import os
 import logging
 from github import Github
 from github.GithubException import GithubException
-from config import GITHUB_TOKEN, GITHUB_REPO
+from config import GITHUB_TOKEN, GITHUB_REPO, GITHUB_SYNC_INTERVAL
+import threading
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -67,4 +69,25 @@ def get_repo_info():
         return None
     except Exception as e:
         logger.error(f"Ошибка при получении информации о репозитории: {e}")
-        return None 
+        return None
+
+def start_github_sync():
+    """
+    Запускает периодическую синхронизацию с GitHub
+    """
+    def sync_loop():
+        while True:
+            try:
+                # Отправляем изменения в GitHub
+                push_changes_to_github("Автоматическая синхронизация")
+                logger.info("Успешная синхронизация с GitHub")
+            except Exception as e:
+                logger.error(f"Ошибка при синхронизации с GitHub: {e}")
+            
+            # Ждем следующей синхронизации
+            time.sleep(GITHUB_SYNC_INTERVAL * 60)
+    
+    # Запускаем синхронизацию в отдельном потоке
+    sync_thread = threading.Thread(target=sync_loop, daemon=True)
+    sync_thread.start()
+    logger.info("Запущена периодическая синхронизация с GitHub") 

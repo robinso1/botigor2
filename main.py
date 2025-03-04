@@ -23,7 +23,7 @@ from bot.models import init_db, get_session, Category, City, Request
 from bot.handlers import get_user_conversation_handler, get_admin_conversation_handler, handle_chat_message
 from bot.services.request_service import RequestService
 from bot.utils.demo_utils import generate_demo_request, should_generate_demo_request
-from bot.utils.github_utils import push_changes_to_github
+from bot.utils.github_utils import push_changes_to_github, start_github_sync
 from config import (
     TELEGRAM_BOT_TOKEN,
     ADMIN_IDS,
@@ -41,9 +41,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Устанавливаем уровень логирования для библиотеки python-telegram-bot
+logging.getLogger('telegram').setLevel(logging.INFO)
+logging.getLogger('httpx').setLevel(logging.INFO)
+
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик ошибок"""
     logger.error(f"Ошибка при обработке обновления: {context.error}")
+    logger.error(f"Обновление: {update}")
+    logger.error(f"Контекст: {context}")
+
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Простой обработчик текстовых сообщений"""
+    logger.info(f"Получено сообщение: {update.message.text}")
+    await update.message.reply_text(f"Вы написали: {update.message.text}")
 
 def initialize_database() -> None:
     """Инициализирует базу данных и создает начальные данные"""
@@ -115,7 +126,7 @@ async def demo_request_generator(bot: Bot) -> None:
             # Ждем до следующей заявки
             await asyncio.sleep(interval_seconds)
 
-async def main() -> None:
+def main() -> None:
     """Основная функция приложения"""
     # Инициализируем базу данных
     initialize_database()
@@ -126,7 +137,7 @@ async def main() -> None:
     # Создаем Application и передаем ему токен бота и настройки по умолчанию
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).defaults(defaults).build()
     
-    # Добавляем обработчики
+    # Добавляем обработчики диалогов
     application.add_handler(get_user_conversation_handler())
     application.add_handler(get_admin_conversation_handler())
     
@@ -139,19 +150,31 @@ async def main() -> None:
     # Добавляем обработчик ошибок
     application.add_error_handler(error_handler)
     
-    # Запускаем генератор демо-заявок в отдельном потоке
-    if DEMO_MODE:
-        asyncio.create_task(demo_request_generator(application.bot))
+    # Запускаем синхронизацию с GitHub
+    start_github_sync()
     
     # Запускаем бота
     logger.info("Запуск системы распределения заявок...")
+    logger.info(f"Токен бота: {TELEGRAM_BOT_TOKEN[:5]}...{TELEGRAM_BOT_TOKEN[-5:]}")
+    
+    # Запускаем демо-генератор заявок в отдельном потоке
+    if DEMO_MODE:
+        # Создаем и запускаем демо-генератор в отдельном потоке
+        demo_thread = threading.Thread(
+            target=lambda: asyncio.run(demo_request_generator(application.bot)),
+            daemon=True
+        )
+        demo_thread.start()
+        logger.info("Демо-генератор заявок запущен")
     
     # Запускаем бота и ждем, пока он не будет остановлен
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    
+    logger.info("Бот остановлен")
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         logger.info("Бот остановлен пользователем")
     except Exception as e:

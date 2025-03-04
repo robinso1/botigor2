@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 
 from bot.models import Request, User, Category, City, Distribution
-from config import DEFAULT_DISTRIBUTION_INTERVAL, DEFAULT_USERS_PER_REQUEST, DEFAULT_MAX_DISTRIBUTIONS
+from config import DEFAULT_DISTRIBUTION_INTERVAL, DEFAULT_USERS_PER_REQUEST, DEFAULT_MAX_DISTRIBUTIONS, RESERVE_USERS_PER_REQUEST
 
 logger = logging.getLogger(__name__)
 
@@ -153,11 +153,8 @@ class RequestService:
             logger.info(f"Заявка с ID={request_id} уже была распределена максимальное количество раз")
             return []
         
-        # Получаем пользователей, которым можно отправить заявку
+        # Получаем пользователей для распределения
         users = self._get_users_for_request(request)
-        
-        # Ограничиваем количество пользователей
-        users = users[:DEFAULT_USERS_PER_REQUEST]
         
         # Создаем распределения
         distributions = []
@@ -165,11 +162,15 @@ class RequestService:
             distribution = Distribution(
                 request_id=request.id,
                 user_id=user.id,
-                status="новая",
+                status="отправлено",
                 created_at=datetime.utcnow()
             )
             self.session.add(distribution)
             distributions.append(distribution)
+        
+        # Обновляем статус заявки
+        if distributions:
+            request.status = "актуальная"
         
         self.session.commit()
         
@@ -215,7 +216,20 @@ class RequestService:
         if recently_distributed_user_ids:
             query = query.filter(User.id.notin_(recently_distributed_user_ids))
         
-        return query.all()
+        # Получаем всех подходящих пользователей
+        users = query.all()
+        
+        # Если пользователей достаточно, разделяем на основной и резервный потоки
+        if len(users) > DEFAULT_USERS_PER_REQUEST:
+            main_users = users[:DEFAULT_USERS_PER_REQUEST]
+            reserve_users = users[DEFAULT_USERS_PER_REQUEST:DEFAULT_USERS_PER_REQUEST + RESERVE_USERS_PER_REQUEST]
+            # Чередуем прямой и обратный порядок
+            if request.id % 2 == 0:
+                return main_users + reserve_users
+            else:
+                return list(reversed(main_users + reserve_users))
+        
+        return users
     
     def get_request_statistics(self) -> Dict[str, Any]:
         """
