@@ -1,0 +1,17 @@
+{
+  "tables": 12,
+  "table_stats": {
+    "alembic_version": 1,
+    "categories": 7,
+    "cities": 5,
+    "settings": 0,
+    "users": 6,
+    "requests": 16,
+    "user_category": 8,
+    "user_city": 6,
+    "distributions": 19,
+    "service_packages": 0,
+    "user_statistics": 0,
+    "request_package": 0
+  }
+}

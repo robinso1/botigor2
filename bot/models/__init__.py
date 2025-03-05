@@ -6,8 +6,12 @@ from bot.models.models import (
     Request,
     Distribution,
     Setting,
+    RequestStatus,
+    DistributionStatus,
     init_db,
-    get_session
+    get_session,
+    ServicePackage,
+    UserStatistics
 )
 
 __all__ = [
@@ -18,6 +22,10 @@ __all__ = [
     'Request',
     'Distribution',
     'Setting',
+    'RequestStatus',
+    'DistributionStatus',
     'init_db',
-    'get_session'
+    'get_session',
+    'ServicePackage',
+    'UserStatistics'
 ] 

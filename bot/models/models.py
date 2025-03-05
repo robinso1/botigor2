@@ -45,6 +45,17 @@ class RequestStatus(enum.Enum):
     CLIENT_REJECTED = "отказ клиента"
     COMPLETED = "завершена"
     PENDING = "ожидание подтверждения"
+    DISTRIBUTING = "распределение"
+    CANCELLED = "отменена"
+    EXPIRED = "просрочена"
+
+class DistributionStatus(enum.Enum):
+    """Статусы распределений заявок"""
+    PENDING = "ожидание"
+    ACCEPTED = "принято"
+    REJECTED = "отклонено"
+    COMPLETED = "завершено"
+    EXPIRED = "просрочено"
 
 class User(Base):
     """Модель пользователя бота"""
@@ -178,11 +189,12 @@ class Distribution(Base):
     request_id = Column(Integer, ForeignKey('requests.id'), nullable=False)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     telegram_message_id = Column(Integer, nullable=True)  # ID сообщения, отправленного пользователю
-    status = Column(String(50), default="отправлено")  # отправлено, просмотрено, принято, отклонено
+    status = Column(Enum(DistributionStatus), default=DistributionStatus.PENDING)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     response_time = Column(Integer, nullable=True)  # Время ответа в секундах
     is_converted = Column(Boolean, default=False)  # Флаг успешной конверсии
+    expires_at = Column(DateTime, nullable=True)  # Время истечения срока действия распределения
     
     # Отношения
     request = relationship("Request", back_populates="distributions")

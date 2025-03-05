@@ -1,11 +1,15 @@
+"""
+Модуль для работы с заявками.
+"""
 import logging
 import random
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, and_, or_
+from sqlalchemy import func, desc, and_, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.models.models import Request, User, Category, City, Distribution, RequestStatus
+from bot.models import Request, User, Category, City, Distribution, RequestStatus, DistributionStatus
 from bot.utils import (
     encrypt_personal_data, 
     decrypt_personal_data,
@@ -30,7 +34,7 @@ class RequestService:
     def __init__(self, session: Session):
         self.session = session
         
-    def create_request(self, data: Dict[str, Any]) -> Request:
+    async def create_request(self, data: Dict[str, Any]) -> Optional[Request]:
         """
         Создает новую заявку
         
@@ -38,90 +42,97 @@ class RequestService:
             data: Данные заявки
             
         Returns:
-            Request: Созданная заявка
+            Optional[Request]: Созданная заявка или None, если не удалось создать
         """
-        # Получаем категорию и город
-        category = None
-        if 'category_id' in data and data['category_id']:
-            category = self.session.query(Category).filter_by(id=data['category_id']).first()
-        elif 'category_name' in data and data['category_name']:
-            category = self.session.query(Category).filter_by(name=data['category_name']).first()
+        try:
+            # Получаем категорию и город
+            category = None
+            if 'category_id' in data and data['category_id']:
+                category = self.session.query(Category).filter_by(id=data['category_id']).first()
+            elif 'category_name' in data and data['category_name']:
+                category = self.session.query(Category).filter_by(name=data['category_name']).first()
             
-        city = None
-        if 'city_id' in data and data['city_id']:
-            city = self.session.query(City).filter_by(id=data['city_id']).first()
-        elif 'city_name' in data and data['city_name']:
-            city = self.session.query(City).filter_by(name=data['city_name']).first()
+            city = None
+            if 'city_id' in data and data['city_id']:
+                city = self.session.query(City).filter_by(id=data['city_id']).first()
+            elif 'city_name' in data and data['city_name']:
+                city = self.session.query(City).filter_by(name=data['city_name']).first()
             
-        # Создаем заявку
-        request = Request(
-            source_chat_id=data.get('source_chat_id'),
-            source_message_id=data.get('source_message_id'),
-            client_name=data.get('client_name'),
-            client_phone=data.get('client_phone'),
-            description=data.get('description'),
-            status=RequestStatus.NEW,
-            area=data.get('area'),
-            address=data.get('address'),
-            is_demo=data.get('is_demo', False),
-            category=category,
-            city=city,
-            extra_data=data.get('extra_data'),
-            estimated_cost=data.get('estimated_cost')
-        )
-        
-        # Шифруем персональные данные для реальных заявок
-        if not request.is_demo:
+            if not category:
+                logger.warning(f"Категория с ID {data['category_id']} не найдена")
+                return None
+            
+            if not city:
+                logger.warning(f"Город с ID {data['city_id']} не найден")
+                return None
+            
             # Шифруем персональные данные
-            if request.client_name:
-                request.client_name = encrypt_personal_data(request.client_name)
+            if data.get('client_name'):
+                data['client_name'] = encrypt_personal_data(data['client_name'])
                 
-            if request.client_phone:
-                request.client_phone = encrypt_personal_data(request.client_phone)
+            if data.get('client_phone'):
+                data['client_phone'] = encrypt_personal_data(data['client_phone'])
                 
-            if request.address:
-                request.address = encrypt_personal_data(request.address)
+            if data.get('address'):
+                data['address'] = encrypt_personal_data(data['address'])
                 
             # Логируем событие безопасности
             log_security_event('data_encrypted', 0, {
-                'request_id': request.id,
+                'request_id': data.get('id'),
                 'fields': ['client_name', 'client_phone', 'address']
             })
-        else:
-            # Для демо-заявок маскируем телефон
-            if request.client_phone:
-                request.client_phone = mask_phone_number(request.client_phone, DEMO_PHONE_MASK_PERCENT)
-        
-        self.session.add(request)
-        self.session.commit()
-        
-        # Отправляем данные в CRM только для реальных заявок
-        if not request.is_demo:
-            # Расшифровываем данные для отправки в CRM
-            crm_data = {
-                'id': request.id,
-                'client_name': decrypt_personal_data(request.client_name) if request.client_name else '',
-                'client_phone': decrypt_personal_data(request.client_phone) if request.client_phone else '',
-                'description': request.description,
-                'category': {'id': category.id, 'name': category.name} if category else {},
-                'city': {'id': city.id, 'name': city.name} if city else {},
-                'area': request.area,
-                'address': decrypt_personal_data(request.address) if request.address else '',
-                'is_demo': request.is_demo,
-                'estimated_cost': request.estimated_cost
-            }
             
-            # Отправляем данные в CRM
-            success = send_to_crm(crm_data)
-            if success:
-                logger.info(f"Данные заявки #{request.id} успешно отправлены в CRM")
-            else:
-                logger.warning(f"Не удалось отправить данные заявки #{request.id} в CRM")
+            # Создаем заявку
+            request = Request(
+                source_chat_id=data.get('source_chat_id'),
+                source_message_id=data.get('source_message_id'),
+                client_name=data.get('client_name'),
+                client_phone=data.get('client_phone'),
+                description=data.get('description'),
+                status=RequestStatus.NEW,
+                area=data.get('area'),
+                address=data.get('address'),
+                is_demo=data.get('is_demo', False),
+                category=category,
+                city=city,
+                extra_data=data.get('extra_data'),
+                estimated_cost=data.get('estimated_cost')
+            )
+            
+            self.session.add(request)
+            await self.session.commit()
+            
+            # Отправляем данные в CRM только для реальных заявок
+            if not request.is_demo:
+                # Расшифровываем данные для отправки в CRM
+                crm_data = {
+                    'id': request.id,
+                    'client_name': decrypt_personal_data(request.client_name) if request.client_name else '',
+                    'client_phone': decrypt_personal_data(request.client_phone) if request.client_phone else '',
+                    'description': request.description,
+                    'category': {'id': category.id, 'name': category.name} if category else {},
+                    'city': {'id': city.id, 'name': city.name} if city else {},
+                    'area': request.area,
+                    'address': decrypt_personal_data(request.address) if request.address else '',
+                    'is_demo': request.is_demo,
+                    'estimated_cost': request.estimated_cost
+                }
+                
+                # Отправляем данные в CRM
+                success = await send_to_crm(crm_data)
+                if success:
+                    logger.info(f"Данные заявки #{request.id} успешно отправлены в CRM")
+                else:
+                    logger.warning(f"Не удалось отправить данные заявки #{request.id} в CRM")
+            
+            logger.info(f"Создана новая заявка #{request.id} от {data.get('client_name')}")
+            return request
+        except Exception as e:
+            logger.error(f"Ошибка при создании заявки: {e}")
+            await self.session.rollback()
+            return None
         
-        logger.info(f"Создана новая заявка #{request.id} от {data.get('client_name')}")
-        return request
-        
-    def update_request(self, request_id: int, data: Dict[str, Any]) -> Optional[Request]:
+    async def update_request(self, request_id: int, data: Dict[str, Any]) -> Optional[Request]:
         """
         Обновляет существующую заявку
         
@@ -132,53 +143,58 @@ class RequestService:
         Returns:
             Optional[Request]: Обновленная заявка или None, если заявка не найдена
         """
-        request = self.session.query(Request).filter_by(id=request_id).first()
-        if not request:
-            logger.warning(f"Заявка #{request_id} не найдена")
-            return None
+        try:
+            request = await self.get_request(request_id)
+            if not request:
+                logger.warning(f"Заявка #{request_id} не найдена")
+                return None
             
-        # Обновляем категорию
-        if 'category_id' in data and data['category_id']:
-            category = self.session.query(Category).filter_by(id=data['category_id']).first()
-            if category:
-                request.category = category
-                
-        # Обновляем город
-        if 'city_id' in data and data['city_id']:
-            city = self.session.query(City).filter_by(id=data['city_id']).first()
-            if city:
-                request.city = city
-                
-        # Обновляем статус
-        if 'status' in data:
-            try:
-                request.status = RequestStatus(data['status'])
-            except ValueError:
-                logger.warning(f"Неверный статус: {data['status']}")
-                
-        # Обновляем остальные поля
-        for field in ['client_name', 'client_phone', 'description', 'area', 'address', 'estimated_cost', 'crm_id', 'crm_status']:
-            if field in data:
-                # Шифруем персональные данные
-                if field in ['client_name', 'client_phone', 'address'] and not request.is_demo:
-                    setattr(request, field, encrypt_personal_data(data[field]))
+            # Обновляем категорию
+            if 'category_id' in data and data['category_id']:
+                category = self.session.query(Category).filter_by(id=data['category_id']).first()
+                if category:
+                    request.category = category
+            
+            # Обновляем город
+            if 'city_id' in data and data['city_id']:
+                city = self.session.query(City).filter_by(id=data['city_id']).first()
+                if city:
+                    request.city = city
+            
+            # Обновляем статус
+            if 'status' in data:
+                try:
+                    request.status = RequestStatus(data['status'])
+                except ValueError:
+                    logger.warning(f"Неверный статус: {data['status']}")
+            
+            # Обновляем остальные поля
+            for field in ['client_name', 'client_phone', 'description', 'area', 'address', 'estimated_cost', 'crm_id', 'crm_status']:
+                if field in data:
+                    # Шифруем персональные данные
+                    if field in ['client_name', 'client_phone', 'address'] and not request.is_demo:
+                        setattr(request, field, encrypt_personal_data(data[field]))
+                    else:
+                        setattr(request, field, data[field])
+            
+            # Обновляем дополнительные данные
+            if 'extra_data' in data:
+                if request.extra_data:
+                    request.extra_data.update(data['extra_data'])
                 else:
-                    setattr(request, field, data[field])
-                    
-        # Обновляем дополнительные данные
-        if 'extra_data' in data:
-            if request.extra_data:
-                request.extra_data.update(data['extra_data'])
-            else:
-                request.extra_data = data['extra_data']
-                
-        request.updated_at = datetime.utcnow()
-        self.session.commit()
+                    request.extra_data = data['extra_data']
+            
+            request.updated_at = datetime.utcnow()
+            await self.session.commit()
+            
+            logger.info(f"Заявка #{request_id} обновлена")
+            return request
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении заявки #{request_id}: {e}")
+            await self.session.rollback()
+            return None
         
-        logger.info(f"Заявка #{request_id} обновлена")
-        return request
-        
-    def get_request_by_id(self, request_id: int) -> Optional[Request]:
+    async def get_request(self, request_id: int) -> Optional[Request]:
         """
         Получает заявку по ID
         
@@ -188,8 +204,16 @@ class RequestService:
         Returns:
             Optional[Request]: Заявка или None, если заявка не найдена
         """
-        request = self.session.query(Request).filter_by(id=request_id).first()
-        return request
+        try:
+            result = await self.session.execute(
+                select(Request).where(Request.id == request_id)
+            )
+            request = result.scalar_one_or_none()
+            
+            return request
+        except Exception as e:
+            logger.error(f"Ошибка при получении заявки #{request_id}: {e}")
+            return None
         
     def get_requests_for_distribution(self) -> List[Request]:
         """
@@ -212,7 +236,7 @@ class RequestService:
                 
         return result
         
-    def distribute_request(self, request_id: int) -> List[Distribution]:
+    async def distribute_request(self, request_id: int) -> List[Distribution]:
         """
         Распределяет заявку между пользователями
         
@@ -222,7 +246,7 @@ class RequestService:
         Returns:
             List[Distribution]: Список созданных распределений
         """
-        request = self.get_request_by_id(request_id)
+        request = await self.get_request(request_id)
         if not request:
             logger.warning(f"Заявка #{request_id} не найдена")
             return []
@@ -282,7 +306,7 @@ class RequestService:
                 self.session.add(distribution)
                 distributions.append(distribution)
                 
-        self.session.commit()
+        await self.session.commit()
         
         logger.info(f"Заявка #{request_id} распределена между {len(distributions)} пользователями")
         return distributions
@@ -388,7 +412,7 @@ class RequestService:
             "acceptance_rate": round(accepted_distributions / total_distributions * 100, 2) if total_distributions > 0 else 0
         }
         
-    def get_user_distributions(self, telegram_id: int) -> List[Distribution]:
+    async def get_user_distributions(self, telegram_id: int) -> List[Distribution]:
         """
         Получает список распределений для пользователя
         
@@ -419,7 +443,7 @@ class RequestService:
                     
         return distributions
         
-    def get_distribution(self, distribution_id: int) -> Optional[Distribution]:
+    async def get_distribution(self, distribution_id: int) -> Optional[Distribution]:
         """
         Получает распределение по ID
         
@@ -442,7 +466,7 @@ class RequestService:
                 
         return distribution
         
-    def update_distribution_status(self, distribution_id: int, status: str) -> Optional[Distribution]:
+    async def update_distribution_status(self, distribution_id: int, status: str) -> Optional[Distribution]:
         """
         Обновляет статус распределения
         
@@ -492,7 +516,7 @@ class RequestService:
             distribution.response_time = int(response_time)
             
         distribution.updated_at = datetime.utcnow()
-        self.session.commit()
+        await self.session.commit()
         
         logger.info(f"Статус распределения #{distribution_id} обновлен на '{status}'")
         return distribution 
