@@ -10,7 +10,7 @@ from sqlalchemy import func, desc, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 
-from bot.models import Request, User, Category, City, Distribution, RequestStatus, DistributionStatus
+from bot.models import Request, User, Category, City, Distribution, RequestStatus, DistributionStatus, SubCategory
 from bot.utils import (
     encrypt_personal_data, 
     decrypt_personal_data,
@@ -98,8 +98,19 @@ class RequestService:
                 category=category,
                 city=city,
                 extra_data=data.get('extra_data'),
-                estimated_cost=data.get('estimated_cost')
+                estimated_cost=data.get('estimated_cost'),
+                # Добавляем новые поля для подкатегорий
+                area_value=data.get('area_value'),
+                house_type=data.get('house_type'),
+                has_design_project=data.get('has_design_project', False)
             )
+            
+            # Добавляем подкатегории, если они указаны
+            if 'subcategory_ids' in data and data['subcategory_ids']:
+                subcategories = self.session.query(SubCategory).filter(
+                    SubCategory.id.in_(data['subcategory_ids'])
+                ).all()
+                request.subcategories.extend(subcategories)
             
             # Добавляем заявку в базу данных
             self.session.add(request)
@@ -159,6 +170,23 @@ class RequestService:
                         setattr(request, field, encrypt_personal_data(data[field]))
                     else:
                         setattr(request, field, data[field])
+            
+            # Обновляем поля подкатегорий
+            for field in ['area_value', 'house_type', 'has_design_project']:
+                if field in data:
+                    setattr(request, field, data[field])
+            
+            # Обновляем подкатегории
+            if 'subcategory_ids' in data:
+                # Очищаем текущие подкатегории
+                request.subcategories = []
+                
+                # Добавляем новые подкатегории
+                if data['subcategory_ids']:
+                    subcategories = self.session.query(SubCategory).filter(
+                        SubCategory.id.in_(data['subcategory_ids'])
+                    ).all()
+                    request.subcategories.extend(subcategories)
             
             # Обновляем дополнительные данные
             if 'extra_data' in data:
@@ -320,12 +348,64 @@ class RequestService:
         if request.city_id:
             query = query.join(User.cities).filter(City.id == request.city_id)
             
+        # Фильтр по подкатегориям
+        if request.subcategories:
+            # Получаем ID всех подкатегорий заявки
+            subcategory_ids = [sc.id for sc in request.subcategories]
+            if subcategory_ids:
+                # Фильтруем пользователей, у которых есть хотя бы одна из подкатегорий заявки
+                query = query.join(User.subcategories).filter(SubCategory.id.in_(subcategory_ids))
+        
+        # Дополнительные фильтры по специфическим критериям
+        if request.house_type:
+            # Находим подкатегорию с типом 'house_type' и значением, соответствующим заявке
+            query = query.join(User.subcategories).filter(
+                and_(
+                    SubCategory.type == 'house_type',
+                    SubCategory.name == request.house_type
+                )
+            )
+            
+        if request.has_design_project is not None:
+            # Находим подкатегорию с типом 'design_project'
+            design_subcategory_name = "С дизайн-проектом" if request.has_design_project else "Без дизайн-проекта"
+            query = query.join(User.subcategories).filter(
+                and_(
+                    SubCategory.type == 'design_project',
+                    SubCategory.name == design_subcategory_name
+                )
+            )
+            
+        if request.area_value:
+            # Находим подкатегории с типом 'area' и подходящим диапазоном значений
+            query = query.join(User.subcategories).filter(
+                and_(
+                    SubCategory.type == 'area',
+                    or_(
+                        and_(
+                            SubCategory.min_value <= request.area_value,
+                            SubCategory.max_value >= request.area_value
+                        ),
+                        and_(
+                            SubCategory.min_value <= request.area_value,
+                            SubCategory.max_value.is_(None)
+                        ),
+                        and_(
+                            SubCategory.min_value.is_(None),
+                            SubCategory.max_value >= request.area_value
+                        )
+                    )
+                )
+            )
+            
         # Получаем всех подходящих пользователей
         users = query.all()
         
         # Если нет пользователей с точным совпадением, ищем с частичным совпадением
         if not users:
-            # Пользователи с подходящей категорией или городом
+            logger.info(f"Не найдено пользователей с точным совпадением для заявки #{request.id}, ищем с частичным совпадением")
+            
+            # Сначала пробуем найти по основным критериям (категория и город)
             query = self.session.query(User).filter(User.is_active == True)
             
             if request.category_id:
@@ -336,9 +416,18 @@ class RequestService:
                 query = self.session.query(User).filter(User.is_active == True)
                 query = query.join(User.cities).filter(City.id == request.city_id)
                 users = query.all()
+                
+            # Если все еще нет пользователей, пробуем найти по подкатегориям
+            if not users and request.subcategories:
+                subcategory_ids = [sc.id for sc in request.subcategories]
+                if subcategory_ids:
+                    query = self.session.query(User).filter(User.is_active == True)
+                    query = query.join(User.subcategories).filter(SubCategory.id.in_(subcategory_ids))
+                    users = query.all()
             
         # Если все еще нет пользователей, возвращаем всех активных
         if not users:
+            logger.warning(f"Не найдено подходящих пользователей для заявки #{request.id}, возвращаем всех активных")
             users = self.session.query(User).filter(User.is_active == True).all()
             
         # Сортируем пользователей по количеству полученных заявок (в порядке возрастания)

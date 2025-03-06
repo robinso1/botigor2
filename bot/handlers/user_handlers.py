@@ -11,7 +11,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from sqlalchemy import and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.models import User, Category, City, Request, Distribution, RequestStatus, DistributionStatus
+from bot.models import User, Category, City, Request, Distribution, RequestStatus, DistributionStatus, SubCategory
 from bot.services.user_service import UserService
 from bot.services.request_service import RequestService
 from bot.utils import encrypt_personal_data, decrypt_personal_data, mask_phone_number
@@ -33,6 +33,7 @@ class UserStates(StatesGroup):
     REQUEST_STATUS_SELECTION = State()
     SELECTING_CATEGORIES = State()
     SELECTING_CITIES = State()
+    SELECTING_SUBCATEGORIES = State()
     EDIT_PHONE = State()
     MY_REQUESTS = State()
     REQUEST_DETAILS = State()
@@ -179,10 +180,19 @@ async def profile_menu(update: types.Message, state: FSMContext) -> None:
             else:
                 profile_text += "\n*Выбранные города*: Не выбраны\n"
             
+            # Получаем выбранные подкатегории
+            subcategories = db_user.subcategories
+            if subcategories:
+                profile_text += "\n*Выбранные подкатегории*:\n"
+                for subcategory in subcategories:
+                    profile_text += f"- {subcategory.name} ({subcategory.category.name})\n"
+            else:
+                profile_text += "\n*Выбранные подкатегории*: Не выбраны\n"
+            
             # Создаем клавиатуру
             keyboard = [
                 [KeyboardButton(text="🔧 Выбрать категории"), KeyboardButton(text="🏙️ Выбрать города")],
-                [KeyboardButton(text="📱 Изменить телефон")],
+                [KeyboardButton(text="📱 Изменить телефон"), KeyboardButton(text="🔍 Выбрать подкатегории")],
                 [KeyboardButton(text="🔙 Вернуться в главное меню")]
             ]
             
@@ -911,6 +921,273 @@ async def show_admin_message(update: types.Message, state: FSMContext) -> None:
     """Показывает сообщение о необходимости использовать команду /admin"""
     await update.answer("Используйте команду /admin для доступа к админ-панели")
     await state.set_state(UserStates.MAIN_MENU)
+
+async def select_subcategories(update: types.Message, state: FSMContext) -> None:
+    """Показывает список подкатегорий для выбора"""
+    try:
+        user = update.from_user
+        
+        # Используем контекстный менеджер для сессии
+        with get_session() as session:
+            user_service = UserService(session)
+            
+            # Получаем пользователя из БД
+            db_user = user_service.get_user_by_telegram_id(user.id)
+            if not db_user:
+                await update.answer("Пользователь не найден. Пожалуйста, используйте /start для регистрации.")
+                await state.set_state(UserStates.MAIN_MENU)
+                return
+            
+            # Проверяем, выбрал ли пользователь категории
+            if not db_user.categories:
+                await update.answer(
+                    "Сначала выберите категории работ в разделе 'Выбрать категории'.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        [[KeyboardButton(text="🔧 Выбрать категории")], 
+                         [KeyboardButton(text="🔙 Вернуться в профиль")]],
+                        resize_keyboard=True
+                    )
+                )
+                return
+            
+            # Получаем подкатегории для выбранных категорий пользователя
+            category_ids = [category.id for category in db_user.categories]
+            subcategories = session.query(SubCategory).filter(
+                and_(
+                    SubCategory.category_id.in_(category_ids),
+                    SubCategory.is_active == True
+                )
+            ).all()
+            
+            if not subcategories:
+                await update.answer(
+                    "Для выбранных категорий нет доступных подкатегорий.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        [[KeyboardButton(text="🔙 Вернуться в профиль")]],
+                        resize_keyboard=True
+                    )
+                )
+                return
+            
+            # Получаем подкатегории пользователя
+            user_subcategories = db_user.subcategories
+            user_subcategory_ids = [sc.id for sc in user_subcategories]
+            
+            # Группируем подкатегории по типу
+            subcategories_by_type = {}
+            for sc in subcategories:
+                if sc.type not in subcategories_by_type:
+                    subcategories_by_type[sc.type] = []
+                subcategories_by_type[sc.type].append(sc)
+            
+            # Сохраняем данные в состоянии
+            await state.update_data(
+                subcategories=[(sc.id, sc.name, sc.type, sc.category_id) for sc in subcategories],
+                user_subcategory_ids=user_subcategory_ids,
+                subcategories_by_type=list(subcategories_by_type.keys())
+            )
+            
+            # Создаем клавиатуру с типами подкатегорий
+            keyboard = []
+            for sc_type in subcategories_by_type.keys():
+                # Преобразуем тип в удобочитаемый формат
+                type_display = {
+                    'house_type': '🏠 Тип дома',
+                    'design_project': '📐 Дизайн-проект',
+                    'area': '📏 Площадь'
+                }.get(sc_type, sc_type)
+                
+                keyboard.append([KeyboardButton(text=f"{type_display}")])
+            
+            # Добавляем кнопку "Готово" и "Назад"
+            keyboard.append(["✅ Готово"])
+            keyboard.append(["🔙 Вернуться в профиль"])
+            
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            
+            # Текст с инструкцией
+            message_text = (
+                "Выберите тип подкатегорий, которые вы хотите настроить:\n\n"
+                "🏠 Тип дома - выбор типов домов, с которыми вы работаете\n"
+                "📐 Дизайн-проект - указание работы с дизайн-проектами\n"
+                "📏 Площадь - диапазоны площадей, с которыми вы работаете\n\n"
+                "После завершения выбора нажмите кнопку '✅ Готово'."
+            )
+            
+            await update.answer(
+                message_text,
+                reply_markup=reply_markup
+            )
+            
+            await state.set_state(UserStates.SELECTING_SUBCATEGORIES)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в select_subcategories: {e}")
+        await update.answer(
+            "Произошла ошибка при отображении подкатегорий. Пожалуйста, попробуйте позже."
+        )
+        await state.set_state(UserStates.PROFILE_MENU)
+
+async def handle_subcategory_selection(update: types.Message, state: FSMContext) -> None:
+    """Обрабатывает выбор типа подкатегорий и показывает список подкатегорий выбранного типа"""
+    try:
+        user = update.from_user
+        message_text = update.text
+        
+        # Получаем данные из состояния
+        data = await state.get_data()
+        subcategories = data.get('subcategories', [])
+        user_subcategory_ids = data.get('user_subcategory_ids', [])
+        subcategories_by_type = data.get('subcategories_by_type', [])
+        
+        # Определяем тип подкатегории по тексту сообщения
+        sc_type_map = {
+            '🏠 Тип дома': 'house_type',
+            '📐 Дизайн-проект': 'design_project',
+            '📏 Площадь': 'area'
+        }
+        
+        selected_type = sc_type_map.get(message_text)
+        
+        if not selected_type:
+            # Если это не выбор типа, возможно это выбор конкретной подкатегории
+            if message_text.startswith('✅') or message_text.startswith('❌'):
+                # Получаем текущий выбранный тип
+                current_type = data.get('current_subcategory_type')
+                if not current_type:
+                    await update.answer("Пожалуйста, сначала выберите тип подкатегории.")
+                    return
+                
+                # Получаем имя подкатегории без маркера
+                subcategory_name = message_text[2:].strip()
+                
+                # Находим ID подкатегории
+                subcategory_id = None
+                for sc_id, sc_name, sc_type, _ in subcategories:
+                    if sc_name == subcategory_name and sc_type == current_type:
+                        subcategory_id = sc_id
+                        break
+                
+                if subcategory_id is None:
+                    await update.answer("Подкатегория не найдена. Пожалуйста, выберите из списка.")
+                    return
+                
+                # Используем контекстный менеджер для сессии
+                with get_session() as session:
+                    user_service = UserService(session)
+                    db_user = user_service.get_user_by_telegram_id(user.id)
+                    
+                    # Обновляем выбор подкатегории
+                    if subcategory_id in user_subcategory_ids:
+                        # Удаляем подкатегорию
+                        user_service.remove_subcategory_from_user(db_user.id, subcategory_id)
+                        user_subcategory_ids.remove(subcategory_id)
+                    else:
+                        # Добавляем подкатегорию
+                        user_service.add_subcategory_to_user(db_user.id, subcategory_id)
+                        user_subcategory_ids.append(subcategory_id)
+                
+                # Обновляем данные в состоянии
+                await state.update_data(user_subcategory_ids=user_subcategory_ids)
+                
+                # Показываем обновленный список подкатегорий текущего типа
+                filtered_subcategories = [(sc_id, sc_name, sc_type, cat_id) for sc_id, sc_name, sc_type, cat_id in subcategories if sc_type == current_type]
+                
+                # Создаем клавиатуру с подкатегориями
+                keyboard = []
+                for sc_id, sc_name, _, _ in filtered_subcategories:
+                    # Добавляем маркер выбранной подкатегории
+                    status = "✅" if sc_id in user_subcategory_ids else "❌"
+                    keyboard.append([f"{status} {sc_name}"])
+                
+                # Добавляем кнопку "Назад к типам" и "Готово"
+                keyboard.append(["⬅️ Назад к типам"])
+                keyboard.append(["✅ Готово"])
+                keyboard.append(["🔙 Вернуться в профиль"])
+                
+                reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                
+                await update.answer(
+                    f"Выберите подкатегории типа '{message_text}':\n\n"
+                    "❌ - подкатегория не выбрана\n"
+                    "✅ - подкатегория выбрана\n\n"
+                    "Нажимайте на подкатегории для выбора/отмены.",
+                    reply_markup=reply_markup
+                )
+                return
+            
+            # Проверяем другие команды
+            if message_text == "⬅️ Назад к типам":
+                # Показываем список типов подкатегорий
+                keyboard = []
+                for sc_type in subcategories_by_type:
+                    # Преобразуем тип в удобочитаемый формат
+                    type_display = {
+                        'house_type': '🏠 Тип дома',
+                        'design_project': '📐 Дизайн-проект',
+                        'area': '📏 Площадь'
+                    }.get(sc_type, sc_type)
+                    
+                    keyboard.append([KeyboardButton(text=f"{type_display}")])
+                
+                # Добавляем кнопку "Готово" и "Назад"
+                keyboard.append(["✅ Готово"])
+                keyboard.append(["🔙 Вернуться в профиль"])
+                
+                reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                
+                await update.answer(
+                    "Выберите тип подкатегорий:",
+                    reply_markup=reply_markup
+                )
+                
+                # Очищаем текущий выбранный тип
+                await state.update_data(current_subcategory_type=None)
+                return
+            
+            if message_text == "✅ Готово" or message_text == "🔙 Вернуться в профиль":
+                # Возвращаемся в меню профиля
+                await profile_menu(update, state)
+                return
+            
+            # Если это не известная команда, показываем сообщение об ошибке
+            await update.answer("Пожалуйста, выберите опцию из меню.")
+            return
+        
+        # Сохраняем выбранный тип в состоянии
+        await state.update_data(current_subcategory_type=selected_type)
+        
+        # Фильтруем подкатегории по выбранному типу
+        filtered_subcategories = [(sc_id, sc_name, sc_type, cat_id) for sc_id, sc_name, sc_type, cat_id in subcategories if sc_type == selected_type]
+        
+        # Создаем клавиатуру с подкатегориями
+        keyboard = []
+        for sc_id, sc_name, _, _ in filtered_subcategories:
+            # Добавляем маркер выбранной подкатегории
+            status = "✅" if sc_id in user_subcategory_ids else "❌"
+            keyboard.append([f"{status} {sc_name}"])
+        
+        # Добавляем кнопку "Назад к типам" и "Готово"
+        keyboard.append(["⬅️ Назад к типам"])
+        keyboard.append(["✅ Готово"])
+        keyboard.append(["🔙 Вернуться в профиль"])
+        
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.answer(
+            f"Выберите подкатегории типа '{message_text}':\n\n"
+            "❌ - подкатегория не выбрана\n"
+            "✅ - подкатегория выбрана\n\n"
+            "Нажимайте на подкатегории для выбора/отмены.",
+            reply_markup=reply_markup
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка в handle_subcategory_selection: {e}")
+        await update.answer(
+            "Произошла ошибка при обработке выбора подкатегорий. Пожалуйста, попробуйте позже."
+        )
+        await state.set_state(UserStates.PROFILE_MENU)
 
 # Закомментированные функции, которые использовали python-telegram-bot
 # def get_user_conversation_handler() -> ConversationHandler:

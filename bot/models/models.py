@@ -78,6 +78,7 @@ class User(Base):
     cities = relationship("City", secondary=user_city, back_populates="users")
     distributions = relationship("Distribution", back_populates="user")
     statistics = relationship("UserStatistics", back_populates="user", uselist=False)
+    subcategories = relationship("SubCategory", secondary="user_subcategory", back_populates="users")
     
     def __repr__(self):
         return f"<User(id={self.id}, telegram_id={self.telegram_id}, username={self.username})>"
@@ -95,7 +96,7 @@ class Category(Base):
     # Отношения
     users = relationship("User", secondary=user_category, back_populates="categories")
     requests = relationship("Request", back_populates="category")
-    subcategories = relationship("Category", backref=backref("parent", remote_side=[id]))
+    subcategories = relationship("SubCategory", back_populates="category")
     
     def __repr__(self):
         return f"<Category(id={self.id}, name={self.name})>"
@@ -174,9 +175,15 @@ class Request(Base):
     city = relationship("City", back_populates="requests")
     distributions = relationship("Distribution", back_populates="request")
     packages = relationship("ServicePackage", secondary=request_package, back_populates="requests")
+    subcategories = relationship("SubCategory", secondary="request_subcategory")
     
     # Дополнительные данные в формате JSON
     extra_data = Column(JSON, nullable=True)
+    
+    # Добавляем поля для подкатегорий
+    area_value = Column(Float, nullable=True)  # Значение площади
+    house_type = Column(String(50), nullable=True)  # Тип дома
+    has_design_project = Column(Boolean, default=False)  # Наличие дизайн-проекта
     
     def __repr__(self):
         return f"<Request(id={self.id}, client_name={self.client_name}, status={self.status})>"
@@ -233,6 +240,42 @@ class Setting(Base):
     
     def __repr__(self):
         return f"<Setting(key={self.key}, value={self.value})>"
+
+class SubCategory(Base):
+    """Модель подкатегории для дополнительных критериев"""
+    __tablename__ = 'subcategories'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    category_id = Column(Integer, ForeignKey('categories.id'), nullable=False)
+    type = Column(String(50), nullable=False)  # Тип подкатегории: area, house_type, design_project, etc.
+    min_value = Column(Float, nullable=True)  # Минимальное значение (для числовых критериев)
+    max_value = Column(Float, nullable=True)  # Максимальное значение (для числовых критериев)
+    is_active = Column(Boolean, default=True)
+    
+    # Отношения
+    category = relationship("Category", back_populates="subcategories")
+    users = relationship("User", secondary="user_subcategory", back_populates="subcategories")
+    
+    def __repr__(self):
+        return f"<SubCategory(id={self.id}, name='{self.name}', type='{self.type}')>"
+
+# Таблица связи пользователей и подкатегорий
+user_subcategory = Table(
+    'user_subcategory',
+    Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('subcategory_id', Integer, ForeignKey('subcategories.id'), primary_key=True)
+)
+
+# Таблица связи заявок и подкатегорий
+request_subcategory = Table(
+    'request_subcategory',
+    Base.metadata,
+    Column('request_id', Integer, ForeignKey('requests.id'), primary_key=True),
+    Column('subcategory_id', Integer, ForeignKey('subcategories.id'), primary_key=True)
+)
 
 # Функция для создания и инициализации базы данных
 def init_db():

@@ -13,6 +13,7 @@ from bot.handlers.user_handlers import (
     select_categories, toggle_category, select_cities, toggle_city,
     edit_phone, save_phone, my_requests, show_request,
     accept_request, reject_request, show_admin_message,
+    select_subcategories, handle_subcategory_selection,
     UserStates
 )
 from bot.handlers.admin_handlers_aiogram import (
@@ -46,6 +47,7 @@ def setup_handlers() -> Router:
     router.message.register(select_cities, F.text == "🏙️ Выбрать города", StateFilter(UserStates.PROFILE_MENU))
     router.message.register(select_categories, F.text == "🔧 Выбрать категории", StateFilter(UserStates.PROFILE_MENU))
     router.message.register(edit_phone, F.text == "📱 Изменить телефон", StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(select_subcategories, F.text == "🔍 Выбрать подкатегории", StateFilter(UserStates.PROFILE_MENU))
     router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.PROFILE_MENU))
     
     # Обработчики для выбора категорий и городов
@@ -97,6 +99,9 @@ def setup_handlers() -> Router:
     
     # Обработчики для статистики
     router.message.register(admin_stats, F.text == "📊 Статистика", StateFilter(AdminStates.MAIN_MENU))
+    
+    # Обработчики для выбора подкатегорий
+    router.message.register(handle_subcategory_selection, StateFilter(UserStates.SELECTING_SUBCATEGORIES))
     
     # Регистрация обработчиков ошибок
     register_error_handlers(router)
