@@ -206,19 +206,19 @@ async def main():
     # Инициализация базы данных
     initialize_database()
     
-    # Инициализация бота и диспетчера
-    bot = Bot(
-        token=TELEGRAM_BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-    )
-    
-    # Создаем хранилище состояний
-    storage = MemoryStorage()
-    
-    # Создаем диспетчер с хранилищем состояний
-    dp = Dispatcher(storage=storage)
-    
     try:
+        # Инициализация бота и диспетчера
+        bot = Bot(
+            token=TELEGRAM_BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+        )
+        
+        # Создаем хранилище состояний
+        storage = MemoryStorage()
+        
+        # Создаем диспетчер с хранилищем состояний
+        dp = Dispatcher(storage=storage)
+        
         # Регистрация обработчиков
         router = setup_handlers()
         dp.include_router(router)
@@ -244,8 +244,12 @@ async def main():
         if DEBUG_MODE:
             logger.info("Работа в режиме отладки")
         
-        # Запускаем поллинг
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        # Запускаем поллинг с правильными параметрами
+        await dp.start_polling(
+            bot,
+            allowed_updates=dp.resolve_used_update_types(),
+            skip_updates=True  # Пропускаем накопившиеся обновления
+        )
         
     except Exception as e:
         logger.critical(f"Критическая ошибка при запуске бота: {e}")
@@ -256,10 +260,12 @@ async def main():
             demo_task.cancel()
         
         # Закрываем сессию бота
-        await bot.session.close()
+        if 'bot' in locals():
+            await bot.session.close()
         
         # Закрываем хранилище состояний
-        await storage.close()
+        if 'storage' in locals():
+            await storage.close()
 
 if __name__ == "__main__":
     try:
