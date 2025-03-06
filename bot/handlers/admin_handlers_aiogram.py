@@ -50,7 +50,14 @@ class AdminStates(StatesGroup):
 # Функция для проверки, является ли пользователь администратором
 async def is_admin(user_id: int) -> bool:
     """Проверяет, является ли пользователь администратором"""
-    return user_id in ADMIN_IDS
+    try:
+        # Преобразуем user_id в int, если это строка
+        user_id = int(user_id)
+        # Проверяем, есть ли пользователь в списке администраторов
+        return user_id in ADMIN_IDS
+    except (ValueError, TypeError):
+        logger.error(f"Ошибка при проверке администратора: неверный формат ID {user_id}")
+        return False
 
 # Обработчик команды /admin
 async def admin_command(update: types.Message, state: FSMContext) -> None:
