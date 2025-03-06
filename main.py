@@ -40,13 +40,17 @@ from bot.models import (
     DistributionStatus
 )
 
+from bot.utils.demo_generator import (
+    generate_demo_request,
+    should_generate_demo_request,
+    cleanup_old_demo_requests,
+    get_demo_info_message
+)
+
 from bot.utils import (
     push_changes_to_github,
     get_repo_info,
     start_github_sync,
-    generate_demo_request,
-    should_generate_demo_request,
-    cleanup_old_demo_requests,
     encrypt_personal_data,
     decrypt_personal_data,
     mask_phone_number
@@ -54,6 +58,7 @@ from bot.utils import (
 
 from bot.services.request_service import RequestService
 from bot.services.user_service import UserService
+from bot.services.info_service import start_info_service
 from bot.handlers import setup_handlers
 from bot.middlewares import setup_middlewares
 
@@ -101,20 +106,60 @@ def initialize_database() -> None:
     engine = init_db()
     session = get_session()
     
-    # Создаем категории, если их нет
-    for category_name in DEFAULT_CATEGORIES:
-        if not session.query(Category).filter(Category.name == category_name).first():
-            category = Category(name=category_name, is_active=True)
-            session.add(category)
-    
-    # Создаем города, если их нет
-    for city_name in DEFAULT_CITIES:
-        if not session.query(City).filter(City.name == city_name).first():
-            city = City(name=city_name, is_active=True)
-            session.add(city)
-    
-    session.commit()
-    logger.info("База данных инициализирована")
+    try:
+        # Создаем категории, если их нет
+        for category_data in DEFAULT_CATEGORIES:
+            category_name = category_data["name"]
+            category = session.query(Category).filter(Category.name == category_name).first()
+            
+            if not category:
+                category = Category(
+                    name=category_name,
+                    description=category_data.get("description", ""),
+                    is_active=category_data.get("is_active", True)
+                )
+                session.add(category)
+                session.flush()  # Чтобы получить ID категории
+                
+                # Создаем подкатегории, если они есть
+                subcategories = category_data.get("subcategories", [])
+                for subcat_data in subcategories:
+                    subcat_name = subcat_data["name"]
+                    subcategory = session.query(Category).filter(Category.name == subcat_name).first()
+                    
+                    if not subcategory:
+                        subcategory = Category(
+                            name=subcat_name,
+                            description=subcat_data.get("description", ""),
+                            is_active=subcat_data.get("is_active", True),
+                            parent_id=category.id
+                        )
+                        session.add(subcategory)
+        
+        # Создаем города, если их нет
+        for city_data in DEFAULT_CITIES:
+            city_name = city_data["name"]
+            city = session.query(City).filter(City.name == city_name).first()
+            
+            if not city:
+                city = City(
+                    name=city_name,
+                    is_active=city_data.get("is_active", True)
+                )
+                
+                # Добавляем префиксы телефонов, если они есть
+                if "phone_prefixes" in city_data:
+                    city.set_phone_prefixes(city_data["phone_prefixes"])
+                    
+                session.add(city)
+        
+        session.commit()
+        logger.info("База данных инициализирована")
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации базы данных: {e}")
+        session.rollback()
+    finally:
+        session.close()
 
 async def demo_request_generator(bot: Bot) -> None:
     """Генератор демо-заявок"""
@@ -142,10 +187,6 @@ async def demo_request_generator(bot: Bot) -> None:
                 logger.warning("Не удалось сгенерировать демо-заявку")
                 await asyncio.sleep(60)
                 continue
-            
-            # Шифруем персональные данные
-            if 'phone' in demo_data:
-                demo_data['phone'] = encrypt_personal_data(demo_data['phone'])
             
             # Создаем и распределяем заявку
             session = get_session()
@@ -233,6 +274,10 @@ async def main():
         if DEMO_MODE:
             demo_task = asyncio.create_task(demo_request_generator(bot))
             logger.info("Запущен генератор демо-заявок")
+            
+            # Запуск сервиса информационных сообщений
+            await start_info_service(bot)
+            logger.info("Запущен сервис информационных сообщений")
         
         # Запуск синхронизации с GitHub
         if GITHUB_TOKEN and GITHUB_REPO:
@@ -248,24 +293,15 @@ async def main():
         await dp.start_polling(
             bot,
             allowed_updates=dp.resolve_used_update_types(),
-            skip_updates=True  # Пропускаем накопившиеся обновления
+            skip_updates=True
         )
-        
     except Exception as e:
         logger.critical(f"Критическая ошибка при запуске бота: {e}")
         logger.critical(traceback.format_exc())
     finally:
-        # Отменяем все задачи
-        if DEMO_MODE and 'demo_task' in locals():
-            demo_task.cancel()
-        
-        # Закрываем сессию бота
-        if 'bot' in locals():
-            await bot.session.close()
-        
-        # Закрываем хранилище состояний
-        if 'storage' in locals():
-            await storage.close()
+        # Закрываем соединения
+        await bot.session.close()
+        logger.info("Бот остановлен")
 
 if __name__ == "__main__":
     try:

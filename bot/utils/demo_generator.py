@@ -1,3 +1,6 @@
+"""
+Модуль для генерации демо-заявок
+"""
 import logging
 import random
 from typing import Dict, Any, List, Tuple, Optional

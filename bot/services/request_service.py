@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
 
 from bot.models import Request, User, Category, City, Distribution, RequestStatus, DistributionStatus
 from bot.utils import (
@@ -25,6 +26,7 @@ from config import (
     DEMO_MODE,
     DEMO_PHONE_MASK_PERCENT
 )
+from bot.services.crm_service import send_request_to_crm
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ class RequestService:
             data: Данные заявки
             
         Returns:
-            Optional[Request]: Созданная заявка или None, если не удалось создать
+            Optional[Request]: Созданная заявка или None в случае ошибки
         """
         try:
             # Получаем категорию и город
@@ -89,7 +91,7 @@ class RequestService:
                 client_name=data.get('client_name'),
                 client_phone=data.get('client_phone'),
                 description=data.get('description'),
-                status=RequestStatus.NEW,
+                status=data.get('status', RequestStatus.NEW),
                 area=data.get('area'),
                 address=data.get('address'),
                 is_demo=data.get('is_demo', False),
@@ -99,31 +101,12 @@ class RequestService:
                 estimated_cost=data.get('estimated_cost')
             )
             
+            # Добавляем заявку в базу данных
             self.session.add(request)
             self.session.commit()
             
-            # Отправляем данные в CRM только для реальных заявок
-            if not request.is_demo:
-                # Расшифровываем данные для отправки в CRM
-                crm_data = {
-                    'id': request.id,
-                    'client_name': decrypt_personal_data(request.client_name) if request.client_name else '',
-                    'client_phone': decrypt_personal_data(request.client_phone) if request.client_phone else '',
-                    'description': request.description,
-                    'category': {'id': category.id, 'name': category.name} if category else {},
-                    'city': {'id': city.id, 'name': city.name} if city else {},
-                    'area': request.area,
-                    'address': decrypt_personal_data(request.address) if request.address else '',
-                    'is_demo': request.is_demo,
-                    'estimated_cost': request.estimated_cost
-                }
-                
-                # Отправляем данные в CRM
-                success = send_to_crm(crm_data)
-                if success:
-                    logger.info(f"Данные заявки #{request.id} успешно отправлены в CRM")
-                else:
-                    logger.warning(f"Не удалось отправить данные заявки #{request.id} в CRM")
+            # Отправляем заявку в CRM
+            asyncio.create_task(send_request_to_crm(request))
             
             logger.info(f"Создана новая заявка #{request.id} от {data.get('client_name')}")
             return request

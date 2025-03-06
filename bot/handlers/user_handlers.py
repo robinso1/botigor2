@@ -1,5 +1,7 @@
 import logging
-from typing import Dict, Any, List, Optional, Union, Callable
+import re
+from typing import Dict, Any, List, Optional, Union
+from datetime import datetime
 from aiogram import types, Router, F
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -13,7 +15,8 @@ from bot.models import User, Category, City, Request, Distribution, RequestStatu
 from bot.services.user_service import UserService
 from bot.services.request_service import RequestService
 from bot.utils import encrypt_personal_data, decrypt_personal_data, mask_phone_number
-from config import ADMIN_IDS
+from bot.utils.demo_generator import get_demo_info_message
+from config import ADMIN_IDS, DEFAULT_CATEGORIES, DEFAULT_CITIES
 from bot.database.setup import get_session
 
 logger = logging.getLogger(__name__)
@@ -682,158 +685,204 @@ async def show_request(update: types.CallbackQuery, state: FSMContext) -> None:
     """Показывает детали заявки"""
     try:
         # Получаем ID распределения из callback_data
-        callback_query = update.query
-        callback_query.answer()
+        callback_data = update.data
+        await update.answer()
         
-        distribution_id = int(callback_query.data.split("_")[-1])
+        distribution_id = int(callback_data.split("_")[-1])
         
-        session = get_session()
-        request_service = RequestService(session)
-        
-        # Получаем распределение
-        distribution = request_service.get_distribution(distribution_id)
-        if not distribution:
-            await callback_query.message.answer(
-                "Заявка не найдена или была удалена."
+        with get_session() as session:
+            request_service = RequestService(session)
+            
+            # Получаем распределение
+            distribution = await request_service.get_distribution(distribution_id)
+            if not distribution:
+                await update.message.answer(
+                    "Заявка не найдена или была удалена."
+                )
+                await state.set_state(UserStates.MY_REQUESTS)
+                return
+            
+            # Получаем заявку
+            request = distribution.request
+            
+            # Проверяем, является ли заявка демо-заявкой
+            is_demo = request.is_demo
+            
+            # Формируем текст с деталями заявки
+            text = f"📋 *Заявка #{request.id}*"
+            if is_demo:
+                text += " (Демо-заявка)"
+            text += "\n\n"
+            
+            if request.category:
+                text += f"🔧 *Категория:* {request.category.name}\n"
+            if request.city:
+                text += f"🏙️ *Город:* {request.city.name}\n"
+                
+            text += f"👤 *Клиент:* {request.client_name}\n"
+            
+            # Отображаем телефон в зависимости от статуса и типа заявки
+            if distribution.status == DistributionStatus.ACCEPTED:
+                # Для принятых заявок показываем полный телефон
+                if is_demo:
+                    # Для демо-заявок показываем маскированный телефон
+                    text += f"📱 *Телефон:* {request.client_phone}\n"
+                else:
+                    # Для реальных заявок расшифровываем телефон
+                    try:
+                        full_phone = decrypt_personal_data(request.client_phone)
+                        text += f"📱 *Телефон:* {full_phone}\n"
+                    except Exception as e:
+                        logger.error(f"Ошибка при расшифровке телефона: {e}")
+                        text += "📱 *Телефон:* Ошибка расшифровки\n"
+            else:
+                # Для новых заявок показываем маскированный телефон
+                text += f"📱 *Телефон:* {request.client_phone}\n"
+            
+            text += f"📝 *Описание:*\n{request.description}\n"
+            
+            # Добавляем информацию о площади и стоимости, если они указаны
+            if request.area:
+                text += f"📏 *Площадь:* {request.area} м²\n"
+            if request.address:
+                text += f"🏠 *Адрес:* {request.address}\n"
+            if request.estimated_cost:
+                text += f"💰 *Примерная стоимость:* {request.estimated_cost} руб.\n"
+                
+            text += f"\n📊 *Статус распределения:* {distribution.status.value}\n"
+            text += f"📅 *Дата создания:* {request.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+            
+            # Создаем клавиатуру с кнопками действий
+            keyboard = []
+            
+            # Добавляем кнопки в зависимости от статуса
+            if distribution.status == DistributionStatus.PENDING:
+                keyboard.append([
+                    InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_request_{distribution_id}"),
+                    InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_request_{distribution_id}")
+                ])
+            
+            # Добавляем кнопку возврата к списку заявок
+            keyboard.append([InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_requests")])
+            
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+            
+            await update.message.edit_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
             )
-            await state.set_state(UserStates.MY_REQUESTS)
-            return
-        
-        # Получаем заявку
-        request = distribution.request
-        
-        # Расшифровываем и маскируем телефон для отображения
-        phone = "Не указан"
-        if request.phone:
-            try:
-                decrypted_phone = decrypt_personal_data(request.phone)
-                phone = mask_phone_number(decrypted_phone)
-            except Exception as e:
-                logger.error(f"Ошибка при расшифровке телефона: {e}")
-                phone = "Ошибка расшифровки"
-        
-        # Формируем текст с деталями заявки
-        text = f"📋 *Заявка #{request.id}*\n\n"
-        text += f"🔧 *Категория:* {request.category.name}\n"
-        text += f"🏙️ *Город:* {request.city.name}\n"
-        text += f"👤 *Клиент:* {request.name}\n"
-        text += f"📱 *Телефон:* {phone}\n"
-        text += f"📝 *Описание:*\n{request.description}\n\n"
-        text += f"📊 *Статус распределения:* {distribution.status}\n"
-        text += f"📅 *Дата создания:* {request.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-        
-        # Создаем клавиатуру с кнопками действий
-        keyboard = []
-        
-        # Добавляем кнопки в зависимости от статуса
-        if distribution.status == DistributionStatus.NEW.value:
-            keyboard.append([
-                InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_request_{distribution_id}"),
-                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_request_{distribution_id}")
-            ])
-        
-        # Добавляем кнопку возврата к списку заявок
-        keyboard.append([InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_requests")])
-        
-        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-        
-        # Если статус "принято", показываем полный телефон
-        if distribution.status == DistributionStatus.ACCEPTED.value:
-            try:
-                full_phone = decrypt_personal_data(request.phone)
-                text += f"\n*Контактный телефон*: {full_phone}"
-            except Exception as e:
-                logger.error(f"Ошибка при расшифровке телефона: {e}")
-                text += "\n*Контактный телефон*: Ошибка расшифровки"
-        
-        await callback_query.message.edit_text(
-            text=text,
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-        
-        await state.set_state(UserStates.REQUEST_DETAILS)
+            
+            await state.set_state(UserStates.REQUEST_DETAILS)
+            
+            # Если это демо-заявка, отправляем информационное сообщение
+            if is_demo and distribution.status == DistributionStatus.ACCEPTED:
+                await update.message.answer(
+                    get_demo_info_message("after_request"),
+                    parse_mode="Markdown"
+                )
         
     except Exception as e:
         logger.error(f"Ошибка в show_request: {e}")
-        if update.query:
-            await update.query.message.answer(
-                "Произошла ошибка при загрузке заявки. Пожалуйста, попробуйте позже."
-            )
+        await update.message.answer(
+            "Произошла ошибка при загрузке заявки. Пожалуйста, попробуйте позже."
+        )
         await state.set_state(UserStates.MY_REQUESTS)
 
 async def accept_request(update: types.CallbackQuery, state: FSMContext) -> None:
     """Обрабатывает принятие заявки"""
     try:
         # Получаем ID распределения из callback_data
-        callback_query = update.query
-        callback_query.answer()
+        callback_data = update.data
+        await update.answer()
         
-        distribution_id = int(callback_query.data.split("_")[2])
+        distribution_id = int(callback_data.split("_")[2])
         
-        session = get_session()
-        request_service = RequestService(session)
-        
-        # Обновляем статус распределения
-        distribution = request_service.update_distribution_status(distribution_id, "принято")
-        if not distribution:
-            await callback_query.message.answer(
-                "Заявка не найдена или была удалена."
-            )
-            await state.set_state(UserStates.MY_REQUESTS)
-            return
-        
-        # Отправляем сообщение об успешном принятии заявки
-        await callback_query.message.answer(
-            "✅ Вы приняли заявку! Свяжитесь с клиентом по указанному телефону."
-        )
-        
-        # Возвращаемся к списку заявок
-        await my_requests(update, state)
+        with get_session() as session:
+            request_service = RequestService(session)
+            
+            # Обновляем статус распределения
+            distribution = await request_service.update_distribution_status(distribution_id, DistributionStatus.ACCEPTED)
+            if not distribution:
+                await update.message.answer(
+                    "Заявка не найдена или была удалена."
+                )
+                await state.set_state(UserStates.MY_REQUESTS)
+                return
+            
+            # Проверяем, является ли заявка демо-заявкой
+            is_demo = distribution.request.is_demo
+            
+            # Отправляем сообщение об успешном принятии заявки
+            success_message = "✅ Вы приняли заявку! Свяжитесь с клиентом по указанному телефону."
+            if is_demo:
+                success_message += "\n\nЭто демо-заявка для тестирования системы."
+                
+            await update.message.answer(success_message)
+            
+            # Если это демо-заявка, отправляем информационное сообщение
+            if is_demo:
+                await update.message.answer(
+                    get_demo_info_message("after_request"),
+                    parse_mode="Markdown"
+                )
+            
+            # Возвращаемся к списку заявок
+            await my_requests(update.message, state)
         
     except Exception as e:
         logger.error(f"Ошибка в accept_request: {e}")
-        if update.query:
-            await update.query.message.answer(
-                "Произошла ошибка при принятии заявки. Пожалуйста, попробуйте позже."
-            )
+        await update.message.answer(
+            "Произошла ошибка при принятии заявки. Пожалуйста, попробуйте позже."
+        )
         await state.set_state(UserStates.MY_REQUESTS)
 
 async def reject_request(update: types.CallbackQuery, state: FSMContext) -> None:
     """Обрабатывает отклонение заявки"""
     try:
         # Получаем ID распределения из callback_data
-        callback_query = update.query
-        callback_query.answer()
+        callback_data = update.data
+        await update.answer()
         
-        distribution_id = int(callback_query.data.split("_")[2])
+        distribution_id = int(callback_data.split("_")[2])
         
-        session = get_session()
-        request_service = RequestService(session)
-        
-        # Обновляем статус распределения
-        distribution = request_service.update_distribution_status(distribution_id, "отклонено")
-        if not distribution:
-            await callback_query.message.answer(
-                "Заявка не найдена или была удалена."
-            )
-            await state.set_state(UserStates.MY_REQUESTS)
-            return
-        
-        # Отправляем сообщение об успешном отклонении заявки
-        await callback_query.message.answer(
-            "❌ Вы отклонили заявку. Она больше не будет отображаться в списке новых заявок."
-        )
-        
-        # Возвращаемся к списку заявок
-        await my_requests(update, state)
+        with get_session() as session:
+            request_service = RequestService(session)
+            
+            # Обновляем статус распределения
+            distribution = await request_service.update_distribution_status(distribution_id, DistributionStatus.REJECTED)
+            if not distribution:
+                await update.message.answer(
+                    "Заявка не найдена или была удалена."
+                )
+                await state.set_state(UserStates.MY_REQUESTS)
+                return
+            
+            # Проверяем, является ли заявка демо-заявкой
+            is_demo = distribution.request.is_demo
+            
+            # Отправляем сообщение об успешном отклонении заявки
+            reject_message = "❌ Вы отклонили заявку. Она больше не будет отображаться в списке новых заявок."
+            if is_demo:
+                reject_message += "\n\nЭто была демо-заявка для тестирования системы."
+                
+            await update.message.answer(reject_message)
+            
+            # Если это демо-заявка, отправляем информационное сообщение
+            if is_demo:
+                await update.message.answer(
+                    get_demo_info_message("tips"),
+                    parse_mode="Markdown"
+                )
+            
+            # Возвращаемся к списку заявок
+            await my_requests(update.message, state)
         
     except Exception as e:
         logger.error(f"Ошибка в reject_request: {e}")
-        if update.query:
-            await update.query.message.answer(
-                "Произошла ошибка при отклонении заявки. Пожалуйста, попробуйте позже."
-            )
+        await update.message.answer(
+            "Произошла ошибка при отклонении заявки. Пожалуйста, попробуйте позже."
+        )
         await state.set_state(UserStates.MY_REQUESTS)
 
 async def show_admin_message(update: types.Message, state: FSMContext) -> None:

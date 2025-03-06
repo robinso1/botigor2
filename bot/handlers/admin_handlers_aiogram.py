@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Any, List, Optional, Union, Callable
 from datetime import datetime
+from sqlalchemy import func
 
 from aiogram import types, Router, F
 from aiogram.filters import Command, CommandStart, StateFilter
@@ -9,11 +10,11 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 
 from bot.database.setup import get_session
-from bot.models import User, Category, City, Request, Distribution
+from bot.models import User, Category, City, Request, Distribution, RequestStatus
 from bot.services.user_service import UserService
 from bot.services.request_service import RequestService
 from bot.utils import encrypt_personal_data, decrypt_personal_data, mask_phone_number
-from bot.utils.demo_utils import generate_demo_request
+from bot.utils.demo_generator import generate_demo_request, get_demo_info_message
 from config import ADMIN_IDS, DEFAULT_CATEGORIES, DEFAULT_CITIES
 from bot.handlers.user_handlers import show_main_menu
 
@@ -34,6 +35,17 @@ class AdminStates(StatesGroup):
     DISTRIBUTIONS = State()
     DEMO_GENERATION = State()
     STATS = State()
+    
+    @classmethod
+    @property
+    def states(cls):
+        """Возвращает список всех состояний"""
+        return [
+            cls.MAIN_MENU, cls.USERS, cls.CATEGORIES, cls.ADD_CATEGORY, 
+            cls.EDIT_CATEGORY, cls.CITIES, cls.ADD_CITY, cls.EDIT_CITY,
+            cls.REQUESTS, cls.VIEW_REQUEST, cls.DISTRIBUTIONS, 
+            cls.DEMO_GENERATION, cls.STATS
+        ]
 
 # Функция для проверки, является ли пользователь администратором
 async def is_admin(user_id: int) -> bool:
@@ -55,6 +67,7 @@ async def admin_command(message: types.Message, state: FSMContext) -> None:
 async def show_admin_menu(message: types.Message, state: FSMContext) -> None:
     """Показывает главное меню администратора"""
     try:
+        # Создаем клавиатуру для админ-панели
         keyboard = ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="👥 Пользователи"), KeyboardButton(text="🔧 Категории")],
@@ -65,8 +78,11 @@ async def show_admin_menu(message: types.Message, state: FSMContext) -> None:
             resize_keyboard=True
         )
         
-        await message.answer("Панель администратора. Выберите раздел:", reply_markup=keyboard)
+        # Устанавливаем состояние перед отправкой сообщения
         await state.set_state(AdminStates.MAIN_MENU)
+        
+        # Отправляем сообщение с клавиатурой
+        await message.answer("Панель администратора. Выберите раздел:", reply_markup=keyboard)
     except Exception as e:
         logger.error(f"Ошибка в show_admin_menu: {e}")
         await message.answer("Произошла ошибка при отображении меню администратора.")
@@ -291,21 +307,29 @@ async def admin_toggle_city(message: types.Message, state: FSMContext) -> None:
 # Обработчик демо-генерации
 async def admin_demo_generation(message: types.Message, state: FSMContext) -> None:
     """Показывает меню демо-генерации заявок"""
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🔄 Сгенерировать демо-заявку")],
-            [KeyboardButton(text="🔙 Назад в админ-меню")]
-        ],
-        resize_keyboard=True
-    )
-    
-    await message.answer(
-        "Управление демо-генерацией заявок.\n\n"
-        "Вы можете сгенерировать тестовую заявку для проверки работы системы.",
-        reply_markup=keyboard
-    )
-    
-    await state.set_state(AdminStates.DEMO_GENERATION)
+    try:
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="🔄 Сгенерировать заявку")],
+                [KeyboardButton(text="📊 Статистика демо-заявок")],
+                [KeyboardButton(text="🔙 Назад в админ-меню")]
+            ],
+            resize_keyboard=True
+        )
+        
+        # Устанавливаем состояние перед отправкой сообщения
+        await state.set_state(AdminStates.DEMO_GENERATION)
+        
+        await message.answer(
+            "Управление демо-генерацией заявок.\n\n"
+            "Вы можете сгенерировать тестовую заявку для проверки работы системы "
+            "или просмотреть статистику по демо-заявкам.",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в admin_demo_generation: {e}")
+        await message.answer("Произошла ошибка при отображении меню демо-генерации.")
+        await show_admin_menu(message, state)
 
 # Обработчик генерации демо-заявки
 async def admin_generate_demo_request(message: types.Message, state: FSMContext) -> None:
@@ -313,40 +337,180 @@ async def admin_generate_demo_request(message: types.Message, state: FSMContext)
     if message.text == "🔙 Назад в админ-меню":
         await show_admin_menu(message, state)
         return
+        
+    if message.text == "📊 Статистика демо-заявок":
+        await admin_demo_stats(message, state)
+        return
     
     try:
-        request_id = generate_demo_request()
-        await message.answer(f"Демо-заявка успешно сгенерирована. ID: {request_id}")
+        # Генерируем демо-заявку
+        request_data = generate_demo_request()
+        
+        if not request_data:
+            await message.answer("Не удалось сгенерировать демо-заявку. Проверьте наличие активных категорий и городов.")
+            return
+            
+        # Создаем заявку в базе данных
+        with get_session() as session:
+            new_request = Request(
+                client_name=request_data["client_name"],
+                client_phone=request_data["client_phone"],
+                description=request_data["description"],
+                status=request_data["status"],
+                is_demo=True,
+                category_id=request_data["category_id"],
+                city_id=request_data["city_id"],
+                area=request_data.get("area"),
+                address=request_data.get("address"),
+                estimated_cost=request_data.get("estimated_cost"),
+                extra_data=request_data.get("extra_data", {})
+            )
+            session.add(new_request)
+            session.commit()
+            
+            # Получаем информацию о категории и городе
+            category = session.query(Category).filter_by(id=request_data["category_id"]).first()
+            city = session.query(City).filter_by(id=request_data["city_id"]).first()
+            
+            category_name = category.name if category else "Неизвестная категория"
+            city_name = city.name if city else "Неизвестный город"
+            
+            # Формируем сообщение с информацией о заявке
+            info_text = (
+                f"✅ Демо-заявка успешно сгенерирована (ID: {new_request.id})\n\n"
+                f"👤 Клиент: {request_data['client_name']}\n"
+                f"📱 Телефон: {request_data['client_phone']}\n"
+                f"🔧 Категория: {category_name}\n"
+                f"🏙️ Город: {city_name}\n"
+                f"📝 Описание: {request_data['description']}\n"
+                f"📏 Площадь: {request_data.get('area', 'Не указана')} м²\n"
+                f"🏠 Адрес: {request_data.get('address', 'Не указан')}\n"
+                f"💰 Примерная стоимость: {request_data.get('estimated_cost', 'Не указана')} руб.\n\n"
+                f"Заявка будет распределена между пользователями согласно настройкам системы."
+            )
+            
+            await message.answer(info_text)
+            
+            # Отправляем информационное сообщение о демо-режиме
+            await message.answer(
+                "ℹ️ *Информационное сообщение для пользователей:*\n\n" + 
+                get_demo_info_message("after_request"),
+                parse_mode="Markdown"
+            )
+            
     except Exception as e:
         logger.error(f"Ошибка при генерации демо-заявки: {e}")
         await message.answer(f"Ошибка при генерации демо-заявки: {str(e)}")
 
+# Обработчик статистики демо-заявок
+async def admin_demo_stats(message: types.Message, state: FSMContext) -> None:
+    """Показывает статистику по демо-заявкам"""
+    try:
+        with get_session() as session:
+            # Общее количество демо-заявок
+            total_demo = session.query(func.count(Request.id)).filter(Request.is_demo == True).scalar()
+            
+            # Количество демо-заявок по статусам
+            status_counts = {}
+            for status in RequestStatus:
+                count = session.query(func.count(Request.id)).filter(
+                    Request.is_demo == True,
+                    Request.status == status
+                ).scalar()
+                if count > 0:
+                    status_counts[status.value] = count
+            
+            # Количество демо-заявок по категориям
+            category_counts = {}
+            categories = session.query(Category).all()
+            for category in categories:
+                count = session.query(func.count(Request.id)).filter(
+                    Request.is_demo == True,
+                    Request.category_id == category.id
+                ).scalar()
+                if count > 0:
+                    category_counts[category.name] = count
+            
+            # Количество демо-заявок по городам
+            city_counts = {}
+            cities = session.query(City).all()
+            for city in cities:
+                count = session.query(func.count(Request.id)).filter(
+                    Request.is_demo == True,
+                    Request.city_id == city.id
+                ).scalar()
+                if count > 0:
+                    city_counts[city.name] = count
+            
+            # Формируем сообщение со статистикой
+            stats_text = f"📊 *Статистика демо-заявок*\n\n"
+            stats_text += f"Всего демо-заявок: {total_demo}\n\n"
+            
+            if status_counts:
+                stats_text += "*По статусам:*\n"
+                for status, count in status_counts.items():
+                    stats_text += f"- {status}: {count}\n"
+                stats_text += "\n"
+            
+            if category_counts:
+                stats_text += "*По категориям:*\n"
+                for category, count in category_counts.items():
+                    stats_text += f"- {category}: {count}\n"
+                stats_text += "\n"
+            
+            if city_counts:
+                stats_text += "*По городам:*\n"
+                for city, count in city_counts.items():
+                    stats_text += f"- {city}: {count}\n"
+            
+            await message.answer(
+                stats_text,
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="🔙 Назад в админ-меню")]
+                    ],
+                    resize_keyboard=True
+                )
+            )
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики демо-заявок: {e}")
+        await message.answer("Произошла ошибка при получении статистики демо-заявок.")
+        await show_admin_menu(message, state)
+
 # Обработчик раздела статистики
 async def admin_stats(message: types.Message, state: FSMContext) -> None:
     """Показывает статистику системы"""
-    with get_session() as session:
-        total_users = session.query(User).count()
-        active_users = session.query(User).filter(User.is_active == True).count()
-        total_requests = session.query(Request).count()
-        total_distributions = session.query(Distribution).count()
-        
-        stats_text = (
-            "📊 *Статистика системы*\n\n"
-            f"👥 Всего пользователей: {total_users}\n"
-            f"👤 Активных пользователей: {active_users}\n"
-            f"📋 Всего заявок: {total_requests}\n"
-            f"📨 Всего распределений: {total_distributions}\n"
-        )
-        
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="🔙 Назад в админ-меню")]
-            ],
-            resize_keyboard=True
-        )
-        
-        await message.answer(stats_text, reply_markup=keyboard)
-        await state.set_state(AdminStates.STATS)
+    try:
+        with get_session() as session:
+            total_users = session.query(User).count()
+            active_users = session.query(User).filter(User.is_active == True).count()
+            total_requests = session.query(Request).count()
+            total_distributions = session.query(Distribution).count()
+            
+            stats_text = (
+                "📊 *Статистика системы*\n\n"
+                f"👥 Всего пользователей: {total_users}\n"
+                f"👤 Активных пользователей: {active_users}\n"
+                f"📋 Всего заявок: {total_requests}\n"
+                f"📨 Всего распределений: {total_distributions}\n"
+            )
+            
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="🔙 Назад в админ-меню")]
+                ],
+                resize_keyboard=True
+            )
+            
+            # Устанавливаем состояние перед отправкой сообщения
+            await state.set_state(AdminStates.STATS)
+            
+            await message.answer(stats_text, reply_markup=keyboard, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Ошибка в admin_stats: {e}")
+        await message.answer("Произошла ошибка при получении статистики.")
+        await show_admin_menu(message, state)
 
 # Функция для регистрации обработчиков администратора
 def register_admin_handlers(router: Router) -> None:

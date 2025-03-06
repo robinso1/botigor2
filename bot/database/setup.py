@@ -5,6 +5,8 @@ import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from contextlib import asynccontextmanager
 
 from bot.database.base import Base
 from config import DATABASE_URL, DEBUG_MODE
@@ -23,6 +25,32 @@ Session = sessionmaker(
     expire_on_commit=False
 )
 session_factory = scoped_session(Session)
+
+# Создаем асинхронный движок и сессию
+async_engine = create_async_engine(
+    DATABASE_URL.replace('sqlite:///', 'sqlite+aiosqlite:///'),
+    echo=DEBUG_MODE
+)
+
+async_session_factory = sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
+
+@asynccontextmanager
+async def async_session():
+    """
+    Асинхронный контекстный менеджер для сессии базы данных.
+    
+    Yields:
+        AsyncSession: Асинхронная сессия SQLAlchemy
+    """
+    session = async_session_factory()
+    try:
+        yield session
+    finally:
+        await session.close()
 
 def setup_database():
     """

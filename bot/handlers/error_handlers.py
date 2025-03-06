@@ -7,7 +7,6 @@ from typing import Dict, Any, Callable, Awaitable, Union, Optional
 from aiogram import Router, types, F
 from aiogram.types import ErrorEvent
 from aiogram.exceptions import TelegramAPIError
-from aiogram.fsm.storage.base import StorageError
 
 from config import ADMIN_IDS
 
@@ -34,7 +33,7 @@ async def error_handler(error: ErrorEvent) -> None:
     # Определяем тип ошибки и соответствующее сообщение
     user_message = "Произошла ошибка при обработке вашего запроса. Пожалуйста, попробуйте позже."
     
-    if isinstance(exception, StorageError):
+    if "storage" in str(exception).lower() or "state" in str(exception).lower():
         user_message = "Произошла ошибка при обработке состояния. Пожалуйста, начните сначала с команды /start"
     elif isinstance(exception, TelegramAPIError):
         user_message = "Произошла ошибка при отправке сообщения. Пожалуйста, попробуйте позже."

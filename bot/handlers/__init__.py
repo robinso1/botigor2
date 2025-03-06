@@ -19,7 +19,7 @@ from bot.handlers.admin_handlers_aiogram import (
     admin_command, show_admin_menu, exit_admin_panel,
     admin_categories, admin_add_category, admin_save_category, admin_toggle_category,
     admin_cities, admin_add_city, admin_save_city, admin_toggle_city,
-    admin_demo_generation, admin_generate_demo_request, admin_stats,
+    admin_demo_generation, admin_generate_demo_request, admin_stats, admin_demo_stats,
     AdminStates, is_admin
 )
 from bot.handlers.help_handlers import help_command
@@ -90,6 +90,7 @@ def setup_handlers() -> Router:
     # Обработчики для демо-генерации
     router.message.register(admin_demo_generation, F.text == "🤖 Демо-генерация", StateFilter(AdminStates.MAIN_MENU))
     router.message.register(admin_generate_demo_request, F.text == "🔄 Сгенерировать заявку", StateFilter(AdminStates.DEMO_GENERATION))
+    router.message.register(admin_demo_stats, F.text == "📊 Статистика демо-заявок", StateFilter(AdminStates.DEMO_GENERATION))
     
     # Обработчики для статистики
     router.message.register(admin_stats, F.text == "📊 Статистика", StateFilter(AdminStates.MAIN_MENU))

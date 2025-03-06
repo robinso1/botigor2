@@ -3,6 +3,7 @@ import json
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 import secrets
+import logging
 
 # Загрузка переменных окружения из файла .env
 load_dotenv()
@@ -144,4 +145,60 @@ SERVICE_PACKAGES = [
         'name': 'Отделка балкона',
         'services': ['Остекление балконов и лоджий', 'Электрика']
     }
-] 
+]
+
+# Настройки CRM-интеграции
+CRM_SETTINGS = {
+    "bitrix24": {
+        "api_key": os.getenv("BITRIX24_API_KEY", ""),
+        "base_url": os.getenv("BITRIX24_BASE_URL", ""),
+        "enabled": os.getenv("BITRIX24_ENABLED", "False").lower() in ("true", "1", "t")
+    },
+    "amocrm": {
+        "api_key": os.getenv("AMOCRM_API_KEY", ""),
+        "base_url": os.getenv("AMOCRM_BASE_URL", ""),
+        "enabled": os.getenv("AMOCRM_ENABLED", "False").lower() in ("true", "1", "t")
+    }
+}
+
+# Настройки безопасности
+SECURITY_SETTINGS = {
+    "max_requests_per_minute": 10,  # Максимальное количество запросов в минуту от одного пользователя
+    "max_failed_attempts": 5,  # Максимальное количество неудачных попыток авторизации
+    "block_duration": 30,  # Длительность блокировки в минутах
+    "encryption_algorithm": "AES-256-GCM"  # Алгоритм шифрования
+}
+
+# Настройки мониторинга
+MONITORING_SETTINGS = {
+    "alert_emails": os.getenv("ALERT_EMAILS", "").split(","),
+    "alert_telegram_ids": eval(os.getenv("ALERT_TELEGRAM_IDS", "[]")),
+    "performance_threshold": 2.0  # Порог времени отклика в секундах
+}
+
+# Настройки GitHub-интеграции
+GITHUB_SETTINGS = {
+    "sync_interval": 15,  # Интервал синхронизации в минутах
+    "auto_deploy": os.getenv("GITHUB_AUTO_DEPLOY", "False").lower() in ("true", "1", "t"),
+    "branch": os.getenv("GITHUB_BRANCH", "main")
+}
+
+# Инициализация логгера
+def setup_logging():
+    """Настраивает логирование"""
+    numeric_level = getattr(logging, LOG_LEVEL.upper(), None)
+    if not isinstance(numeric_level, int):
+        numeric_level = logging.INFO
+    
+    logging.basicConfig(
+        level=numeric_level,
+        format=LOG_FORMAT,
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler()
+        ]
+    )
+    
+    # Отключаем логи от некоторых библиотек
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING) 
