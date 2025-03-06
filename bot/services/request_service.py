@@ -267,12 +267,16 @@ class RequestService:
         # Создаем распределения
         distributions = []
         
+        # Устанавливаем время истечения срока действия распределения
+        expires_at = datetime.utcnow() + timedelta(hours=24)  # Распределение действительно 24 часа
+        
         # Основной поток
         for user in selected_users:
             distribution = Distribution(
                 request_id=request_id,
                 user_id=user.id,
-                status="отправлено"
+                status="отправлено",
+                expires_at=expires_at
             )
             self.session.add(distribution)
             distributions.append(distribution)
@@ -284,7 +288,8 @@ class RequestService:
                 distribution = Distribution(
                     request_id=request_id,
                     user_id=user.id,
-                    status="отправлено"
+                    status="отправлено",
+                    expires_at=expires_at
                 )
                 self.session.add(distribution)
                 distributions.append(distribution)

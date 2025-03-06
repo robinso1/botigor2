@@ -10,6 +10,8 @@ import asyncio
 import socket
 import signal
 import fcntl
+import psutil
+import re
 from datetime import datetime
 
 # Настройка логирования
@@ -29,23 +31,47 @@ LOCK_FILE = "/tmp/telegram_bot.lock"
 def is_bot_running():
     """Проверяет, запущен ли уже экземпляр бота"""
     try:
-        # Пытаемся создать и заблокировать файл
-        lock_file = open(LOCK_FILE, "w")
-        fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Проверяем запущенные процессы Python
+        current_pid = os.getpid()
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                # Пропускаем текущий процесс
+                if proc.info['pid'] == current_pid:
+                    continue
+                
+                # Проверяем, является ли процесс экземпляром нашего бота
+                cmdline = proc.info.get('cmdline', [])
+                if cmdline and len(cmdline) > 1:
+                    cmd_str = ' '.join(cmdline)
+                    if 'python' in cmd_str and 'run_bot.py' in cmd_str:
+                        logger.warning(f"Обнаружен другой экземпляр бота (PID: {proc.info['pid']})")
+                        return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
         
-        # Если удалось, значит другой экземпляр не запущен
-        # Сохраняем файловый дескриптор, чтобы блокировка сохранялась
-        global lock_fd
-        lock_fd = lock_file
-        
-        # Записываем PID в файл блокировки
-        lock_file.write(str(os.getpid()))
-        lock_file.flush()
+        # Если не нашли другой экземпляр, пытаемся создать и заблокировать файл
+        try:
+            lock_file = open(LOCK_FILE, "w")
+            fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            
+            # Если удалось, значит другой экземпляр не запущен
+            # Сохраняем файловый дескриптор, чтобы блокировка сохранялась
+            global lock_fd
+            lock_fd = lock_file
+            
+            # Записываем PID в файл блокировки
+            lock_file.write(str(os.getpid()))
+            lock_file.flush()
+        except IOError:
+            # Если не удалось, значит файл уже заблокирован другим процессом
+            logger.warning("Не удалось получить блокировку файла, возможно, бот уже запущен")
+            return True
         
         return False
-    except IOError:
-        # Если не удалось, значит файл уже заблокирован другим процессом
-        return True
+    except Exception as e:
+        logger.error(f"Ошибка при проверке запущенных экземпляров бота: {e}")
+        # В случае ошибки лучше продолжить выполнение
+        return False
 
 def run_migrations():
     """Применяет миграции базы данных"""
