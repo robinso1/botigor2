@@ -38,44 +38,45 @@ async def start_command(update: types.Message, state: FSMContext) -> None:
     """Обработчик команды /start"""
     try:
         user = update.from_user
-        session = get_session()
-        user_service = UserService(session)
         
-        # Создаем или получаем пользователя
-        db_user = user_service.get_or_create_user(
-            telegram_id=user.id,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name
-        )
-        
-        # Приветственное сообщение
-        welcome_text = (
-            f"👋 Здравствуйте, {user.first_name}!\n\n"
-            "Я бот для распределения заявок. Чтобы начать получать заявки, "
-            "вам нужно настроить свой профиль:\n\n"
-            "1️⃣ Выберите категории работ\n"
-            "2️⃣ Укажите города, в которых работаете\n"
-            "3️⃣ Добавьте контактный телефон\n\n"
-            "После настройки вы начнете получать заявки автоматически.\n\n"
-            "❗️ Используйте кнопку 'Вернуться в главное меню' внизу экрана для навигации."
-        )
-        
-        # Создаем клавиатуру
-        keyboard = [
-            [KeyboardButton(text="👤 Мой профиль")],
-            [KeyboardButton(text="📋 Мои заявки")],
-            [KeyboardButton(text="⚙️ Настройки")],
-            [KeyboardButton(text="🔙 Вернуться в главное меню")]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-        
-        await update.reply(
-            welcome_text,
-            reply_markup=reply_markup
-        )
-        
-        await state.set_state(UserStates.MAIN_MENU)
+        # Используем контекстный менеджер для сессии
+        with get_session() as session:
+            user_service = UserService(session)
+            
+            # Создаем или получаем пользователя
+            db_user = user_service.get_or_create_user(
+                telegram_id=user.id,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name
+            )
+            
+            # Приветственное сообщение
+            welcome_text = (
+                f"👋 Здравствуйте, {user.first_name}!\n\n"
+                "Я бот для распределения заявок. Чтобы начать получать заявки, "
+                "вам нужно настроить свой профиль:\n\n"
+                "1️⃣ Выберите категории работ\n"
+                "2️⃣ Укажите города, в которых работаете\n"
+                "3️⃣ Добавьте контактный телефон\n\n"
+                "После настройки вы начнете получать заявки автоматически."
+            )
+            
+            # Создаем клавиатуру
+            keyboard = [
+                [KeyboardButton(text="👤 Мой профиль")],
+                [KeyboardButton(text="📋 Мои заявки")],
+                [KeyboardButton(text="⚙️ Настройки")],
+                [KeyboardButton(text="🔙 Вернуться в главное меню")]
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+            
+            await update.reply(
+                welcome_text,
+                reply_markup=reply_markup
+            )
+            
+            await state.set_state(UserStates.MAIN_MENU)
         
     except Exception as e:
         logger.error(f"Ошибка в start_command: {e}")
@@ -124,65 +125,67 @@ async def profile_menu(update: types.Message, state: FSMContext) -> None:
     """Показывает меню профиля пользователя"""
     try:
         user = update.from_user
-        session = get_session()
-        user_service = UserService(session)
         
-        db_user = user_service.get_user_by_telegram_id(user.id)
-        if not db_user:
-            await update.answer("Пользователь не найден. Пожалуйста, используйте /start для регистрации.")
-            await state.set_state(UserStates.MAIN_MENU)
-            return
-        
-        # Формируем информацию о профиле
-        profile_text = f"👤 *Профиль пользователя*\n\n"
-        profile_text += f"*Имя*: {db_user.name}\n"
-        
-        # Расшифровываем и маскируем телефон для отображения
-        phone = "Не указан"
-        if db_user.phone:
-            try:
-                decrypted_phone = decrypt_personal_data(db_user.phone)
-                phone = mask_phone_number(decrypted_phone)
-            except Exception as e:
-                logger.error(f"Ошибка при расшифровке телефона: {e}")
-                phone = "Ошибка расшифровки"
-        
-        profile_text += f"*Телефон*: {phone}\n\n"
-        
-        # Получаем выбранные категории
-        categories = user_service.get_user_categories(db_user.id)
-        if categories:
-            profile_text += "*Выбранные категории*:\n"
-            for category in categories:
-                profile_text += f"- {category.name}\n"
-        else:
-            profile_text += "*Выбранные категории*: Не выбраны\n"
-        
-        # Получаем выбранные города
-        cities = user_service.get_user_cities(db_user.id)
-        if cities:
-            profile_text += "\n*Выбранные города*:\n"
-            for city in cities:
-                profile_text += f"- {city.name}\n"
-        else:
-            profile_text += "\n*Выбранные города*: Не выбраны\n"
-        
-        # Создаем клавиатуру
-        keyboard = [
-            [KeyboardButton(text="🔧 Выбрать категории"), KeyboardButton(text="🏙️ Выбрать города")],
-            [KeyboardButton(text="📱 Изменить телефон")],
-            [KeyboardButton(text="🔙 Вернуться в главное меню")]
-        ]
-        
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        
-        await update.answer(
-            profile_text,
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-        
-        await state.set_state(UserStates.PROFILE_MENU)
+        # Используем контекстный менеджер для сессии
+        with get_session() as session:
+            user_service = UserService(session)
+            
+            db_user = user_service.get_user_by_telegram_id(user.id)
+            if not db_user:
+                await update.answer("Пользователь не найден. Пожалуйста, используйте /start для регистрации.")
+                await state.set_state(UserStates.MAIN_MENU)
+                return
+            
+            # Формируем информацию о профиле
+            profile_text = f"👤 *Профиль пользователя*\n\n"
+            profile_text += f"*Имя*: {db_user.name}\n"
+            
+            # Расшифровываем и маскируем телефон для отображения
+            phone = "Не указан"
+            if db_user.phone:
+                try:
+                    decrypted_phone = decrypt_personal_data(db_user.phone)
+                    phone = mask_phone_number(decrypted_phone)
+                except Exception as e:
+                    logger.error(f"Ошибка при расшифровке телефона: {e}")
+                    phone = "Ошибка расшифровки"
+            
+            profile_text += f"*Телефон*: {phone}\n\n"
+            
+            # Получаем выбранные категории
+            categories = user_service.get_user_categories(db_user.id)
+            if categories:
+                profile_text += "*Выбранные категории*:\n"
+                for category in categories:
+                    profile_text += f"- {category.name}\n"
+            else:
+                profile_text += "*Выбранные категории*: Не выбраны\n"
+            
+            # Получаем выбранные города
+            cities = user_service.get_user_cities(db_user.id)
+            if cities:
+                profile_text += "\n*Выбранные города*:\n"
+                for city in cities:
+                    profile_text += f"- {city.name}\n"
+            else:
+                profile_text += "\n*Выбранные города*: Не выбраны\n"
+            
+            # Создаем клавиатуру
+            keyboard = [
+                [KeyboardButton(text="🔧 Выбрать категории"), KeyboardButton(text="🏙️ Выбрать города")],
+                [KeyboardButton(text="📱 Изменить телефон")],
+                [KeyboardButton(text="🔙 Вернуться в главное меню")]
+            ]
+            
+            reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+            
+            await update.answer(
+                profile_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+            
+            await state.set_state(UserStates.PROFILE_MENU)
         
     except Exception as e:
         logger.error(f"Ошибка в profile_menu: {e}")

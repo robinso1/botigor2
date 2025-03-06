@@ -32,23 +32,21 @@ def setup_handlers() -> Router:
     router = Router()
     
     # Регистрация обработчиков команд
-    router.message.register(start_command, CommandStart())
+    router.message.register(start_command, CommandStart(), StateFilter(default_state))
     router.message.register(show_main_menu, Command("menu"))
     router.message.register(help_command, Command("help"))
+    router.message.register(admin_command, Command("admin"))
     
     # Обработчики для главного меню
-    router.message.register(profile_menu, F.text == "👤 Мой профиль" and StateFilter(UserStates.MAIN_MENU))
-    router.message.register(
-        lambda msg, state: my_requests(msg, state, "all"),
-        F.text == "📋 Мои заявки" and StateFilter(UserStates.MAIN_MENU)
-    )
-    router.message.register(settings_menu, F.text == "⚙️ Настройки" and StateFilter(UserStates.MAIN_MENU))
+    router.message.register(profile_menu, F.text == "👤 Мой профиль", StateFilter(UserStates.MAIN_MENU))
+    router.message.register(my_requests, F.text == "📋 Мои заявки", StateFilter(UserStates.MAIN_MENU))
+    router.message.register(settings_menu, F.text == "⚙️ Настройки", StateFilter(UserStates.MAIN_MENU))
     
     # Обработчики для меню профиля
-    router.message.register(select_cities, F.text == "🏙️ Выбрать города" and StateFilter(UserStates.PROFILE_MENU))
-    router.message.register(select_categories, F.text == "🔧 Выбрать категории" and StateFilter(UserStates.PROFILE_MENU))
-    router.message.register(edit_phone, F.text == "📱 Изменить телефон" and StateFilter(UserStates.PROFILE_MENU))
-    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню" and StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(select_cities, F.text == "🏙️ Выбрать города", StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(select_categories, F.text == "🔧 Выбрать категории", StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(edit_phone, F.text == "📱 Изменить телефон", StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.PROFILE_MENU))
     
     # Обработчики для выбора категорий
     router.message.register(toggle_category, StateFilter(UserStates.SELECTING_CATEGORIES))
@@ -60,30 +58,20 @@ def setup_handlers() -> Router:
     router.message.register(save_phone, StateFilter(UserStates.EDIT_PHONE))
     
     # Обработчики для меню настроек
-    router.message.register(lambda msg, state: msg.answer("Настройки уведомлений в разработке"), 
-                           F.text == "🔔 Уведомления", StateFilter(UserStates.SETTINGS_MENU))
     router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.SETTINGS_MENU))
     
     # Обработчики для списка заявок
-    router.message.register(lambda msg, state: my_requests(msg, state, "all"), 
-                           F.text == "📋 Все заявки", StateFilter(UserStates.MY_REQUESTS))
-    router.message.register(lambda msg, state: my_requests(msg, state, "new"), 
-                           F.text == "🆕 Новые", StateFilter(UserStates.MY_REQUESTS))
-    router.message.register(lambda msg, state: my_requests(msg, state, "accepted"), 
-                           F.text == "✅ Принятые", StateFilter(UserStates.MY_REQUESTS))
-    router.message.register(lambda msg, state: my_requests(msg, state, "rejected"), 
-                           F.text == "❌ Отклоненные", StateFilter(UserStates.MY_REQUESTS))
+    router.message.register(lambda msg, state: my_requests(msg, state, "all"), F.text == "📋 Все заявки", StateFilter(UserStates.MY_REQUESTS))
+    router.message.register(lambda msg, state: my_requests(msg, state, "new"), F.text == "🆕 Новые", StateFilter(UserStates.MY_REQUESTS))
+    router.message.register(lambda msg, state: my_requests(msg, state, "accepted"), F.text == "✅ Принятые", StateFilter(UserStates.MY_REQUESTS))
+    router.message.register(lambda msg, state: my_requests(msg, state, "rejected"), F.text == "❌ Отклоненные", StateFilter(UserStates.MY_REQUESTS))
     router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.MY_REQUESTS))
     
     # Обработчики для callback-запросов
     router.callback_query.register(show_request, F.data.startswith("show_request_"))
     router.callback_query.register(accept_request, F.data.startswith("accept_request_"))
     router.callback_query.register(reject_request, F.data.startswith("reject_request_"))
-    router.callback_query.register(lambda c, state: my_requests(c.message, state), 
-                                  F.data == "back_to_requests")
-    
-    # Обработчик для админ-команды
-    router.message.register(admin_command, Command("admin"))
+    router.callback_query.register(lambda c, state: my_requests(c.message, state), F.data == "back_to_requests")
     
     # Обработчики для админ-панели
     router.message.register(show_admin_menu, F.text == "🔙 Главное меню админа", StateFilter(*AdminStates))
