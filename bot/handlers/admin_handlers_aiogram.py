@@ -75,27 +75,32 @@ async def exit_admin_panel(message: types.Message, state: FSMContext) -> None:
 # Обработчик раздела категорий
 async def admin_categories(message: types.Message, state: FSMContext) -> None:
     """Показывает список категорий с возможностью управления"""
-    with get_session() as session:
-        categories = session.query(Category).all()
-        
-        keyboard = []
-        for category in categories:
-            status = "✅" if category.is_active else "❌"
-            keyboard.append([KeyboardButton(text=f"{status} {category.name}")])
-        
-        keyboard.append([KeyboardButton(text="➕ Добавить категорию")])
-        keyboard.append([KeyboardButton(text="🔙 Назад в админ-меню")])
-        
-        reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-        
-        await message.answer(
-            "Управление категориями услуг:\n"
-            "✅ - активна, ❌ - неактивна\n\n"
-            "Нажмите на категорию для изменения статуса или добавьте новую.",
-            reply_markup=reply_markup
-        )
-        
-        await state.set_state(AdminStates.CATEGORIES)
+    try:
+        with get_session() as session:
+            categories = session.query(Category).all()
+            
+            keyboard = []
+            for category in categories:
+                status = "✅" if category.is_active else "❌"
+                keyboard.append([KeyboardButton(text=f"{status} {category.name}")])
+            
+            keyboard.append([KeyboardButton(text="➕ Добавить категорию")])
+            keyboard.append([KeyboardButton(text="🔙 Назад в админ-меню")])
+            
+            reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+            
+            await message.answer(
+                "Управление категориями услуг:\n"
+                "✅ - активна, ❌ - неактивна\n\n"
+                "Нажмите на категорию для изменения статуса или добавьте новую.",
+                reply_markup=reply_markup
+            )
+            
+            await state.set_state(AdminStates.CATEGORIES)
+    except Exception as e:
+        logger.error(f"Ошибка в admin_categories: {e}")
+        await message.answer("Произошла ошибка при загрузке категорий. Пожалуйста, попробуйте позже.")
+        await state.set_state(AdminStates.MAIN_MENU)
 
 # Обработчик добавления новой категории
 async def admin_add_category(message: types.Message, state: FSMContext) -> None:
@@ -103,7 +108,7 @@ async def admin_add_category(message: types.Message, state: FSMContext) -> None:
     await message.answer(
         "Введите название новой категории услуг:",
         reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🔙 Отмена")]],
+            keyboard=[[KeyboardButton(text="🔙 Назад в админ-меню")]],
             resize_keyboard=True
         )
     )
@@ -112,27 +117,32 @@ async def admin_add_category(message: types.Message, state: FSMContext) -> None:
 # Обработчик сохранения новой категории
 async def admin_save_category(message: types.Message, state: FSMContext) -> None:
     """Сохраняет новую категорию в базе данных"""
-    if message.text == "🔙 Отмена":
-        await admin_categories(message, state)
+    if message.text == "🔙 Назад в админ-меню":
+        await show_admin_menu(message, state)
         return
     
     category_name = message.text.strip()
     
-    with get_session() as session:
-        # Проверяем, существует ли уже такая категория
-        existing_category = session.query(Category).filter(Category.name == category_name).first()
-        
-        if existing_category:
-            await message.answer(f"Категория '{category_name}' уже существует.")
-        else:
-            # Создаем новую категорию
-            new_category = Category(name=category_name, is_active=True)
-            session.add(new_category)
-            session.commit()
-            await message.answer(f"Категория '{category_name}' успешно добавлена.")
-        
-        # Возвращаемся к списку категорий
-        await admin_categories(message, state)
+    try:
+        with get_session() as session:
+            # Проверяем, существует ли уже такая категория
+            existing_category = session.query(Category).filter(Category.name == category_name).first()
+            
+            if existing_category:
+                await message.answer(f"Категория '{category_name}' уже существует.")
+            else:
+                # Создаем новую категорию
+                new_category = Category(name=category_name, is_active=True)
+                session.add(new_category)
+                session.commit()
+                await message.answer(f"Категория '{category_name}' успешно добавлена.")
+            
+            # Возвращаемся к списку категорий
+            await admin_categories(message, state)
+    except Exception as e:
+        logger.error(f"Ошибка в admin_save_category: {e}")
+        await message.answer("Произошла ошибка при сохранении категории. Пожалуйста, попробуйте позже.")
+        await state.set_state(AdminStates.MAIN_MENU)
 
 # Обработчик переключения статуса категории
 async def admin_toggle_category(message: types.Message, state: FSMContext) -> None:
@@ -145,26 +155,31 @@ async def admin_toggle_category(message: types.Message, state: FSMContext) -> No
         await admin_add_category(message, state)
         return
     
-    # Извлекаем название категории из сообщения (убираем статус)
-    category_text = message.text
-    if category_text.startswith("✅ ") or category_text.startswith("❌ "):
-        category_name = category_text[2:].strip()
-        
-        with get_session() as session:
-            category = session.query(Category).filter(Category.name == category_name).first()
+    try:
+        # Извлекаем название категории из сообщения (убираем статус)
+        category_text = message.text
+        if category_text.startswith("✅ ") or category_text.startswith("❌ "):
+            category_name = category_text[2:].strip()
             
-            if category:
-                # Переключаем статус
-                category.is_active = not category.is_active
-                session.commit()
+            with get_session() as session:
+                category = session.query(Category).filter(Category.name == category_name).first()
                 
-                status = "активирована" if category.is_active else "деактивирована"
-                await message.answer(f"Категория '{category_name}' {status}.")
-            else:
-                await message.answer(f"Категория '{category_name}' не найдена.")
-        
-        # Обновляем список категорий
-        await admin_categories(message, state)
+                if category:
+                    # Переключаем статус
+                    category.is_active = not category.is_active
+                    session.commit()
+                    
+                    status = "активирована" if category.is_active else "деактивирована"
+                    await message.answer(f"Категория '{category_name}' {status}.")
+                else:
+                    await message.answer(f"Категория '{category_name}' не найдена.")
+            
+            # Обновляем список категорий
+            await admin_categories(message, state)
+    except Exception as e:
+        logger.error(f"Ошибка в admin_toggle_category: {e}")
+        await message.answer("Произошла ошибка при изменении статуса категории. Пожалуйста, попробуйте позже.")
+        await state.set_state(AdminStates.MAIN_MENU)
 
 # Обработчик раздела городов
 async def admin_cities(message: types.Message, state: FSMContext) -> None:

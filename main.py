@@ -211,44 +211,55 @@ async def main():
         token=TELEGRAM_BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
     )
+    
+    # Создаем хранилище состояний
     storage = MemoryStorage()
+    
+    # Создаем диспетчер с хранилищем состояний
     dp = Dispatcher(storage=storage)
     
-    # Регистрация обработчиков
-    router = setup_handlers()
-    
-    # Регистрация middleware
-    setup_middlewares(router)
-    
-    # Включение роутера в диспетчер
-    dp.include_router(router)
-    
-    # Установка команд бота
-    await set_bot_commands(bot)
-    
-    # Запуск генератора демо-заявок в отдельной задаче
-    if DEMO_MODE:
-        asyncio.create_task(demo_request_generator(bot))
-        logger.info("Запущен генератор демо-заявок")
-    
-    # Запуск синхронизации с GitHub
-    if GITHUB_TOKEN and GITHUB_REPO:
-        start_github_sync()
-        logger.info("Запущена синхронизация с GitHub")
-    
-    # Запуск бота
-    logger.info("Бот запущен!")
-    if DEBUG_MODE:
-        logger.info("Работа в режиме отладки")
-    
     try:
-        await dp.start_polling(bot)
+        # Регистрация обработчиков
+        router = setup_handlers()
+        dp.include_router(router)
+        
+        # Регистрация middleware
+        setup_middlewares(router)
+        
+        # Установка команд бота
+        await set_bot_commands(bot)
+        
+        # Запуск генератора демо-заявок в отдельной задаче
+        if DEMO_MODE:
+            demo_task = asyncio.create_task(demo_request_generator(bot))
+            logger.info("Запущен генератор демо-заявок")
+        
+        # Запуск синхронизации с GitHub
+        if GITHUB_TOKEN and GITHUB_REPO:
+            start_github_sync()
+            logger.info("Запущена синхронизация с GitHub")
+        
+        # Запуск бота
+        logger.info("Бот запущен!")
+        if DEBUG_MODE:
+            logger.info("Работа в режиме отладки")
+        
+        # Запускаем поллинг
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        
     except Exception as e:
         logger.critical(f"Критическая ошибка при запуске бота: {e}")
         logger.critical(traceback.format_exc())
     finally:
+        # Отменяем все задачи
+        if DEMO_MODE and 'demo_task' in locals():
+            demo_task.cancel()
+        
+        # Закрываем сессию бота
         await bot.session.close()
-        logger.info("Бот остановлен")
+        
+        # Закрываем хранилище состояний
+        await storage.close()
 
 if __name__ == "__main__":
     try:
