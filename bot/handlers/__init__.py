@@ -74,8 +74,8 @@ def setup_handlers() -> Router:
     router.callback_query.register(lambda c, state: my_requests(c.message, state), F.data == "back_to_requests")
     
     # Обработчики для админ-панели
-    router.message.register(show_admin_menu, F.text == "🔙 Главное меню админа", StateFilter(*AdminStates))
-    router.message.register(exit_admin_panel, F.text == "🚪 Выйти из панели админа", StateFilter(*AdminStates))
+    router.message.register(show_admin_menu, F.text == "🔙 Назад в админ-меню", StateFilter(*AdminStates))
+    router.message.register(exit_admin_panel, F.text == "🔙 Выйти из админ-панели", StateFilter(*AdminStates))
     
     # Обработчики для управления категориями
     router.message.register(admin_categories, F.text == "🔧 Категории", StateFilter(AdminStates.MAIN_MENU))

@@ -54,23 +54,31 @@ async def admin_command(message: types.Message, state: FSMContext) -> None:
 # Показать главное меню администратора
 async def show_admin_menu(message: types.Message, state: FSMContext) -> None:
     """Показывает главное меню администратора"""
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="👥 Пользователи"), KeyboardButton(text="🔧 Категории")],
-            [KeyboardButton(text="🏙️ Города"), KeyboardButton(text="📋 Заявки")],
-            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="🤖 Демо-генерация")],
-            [KeyboardButton(text="🔙 Выйти из админ-панели")]
-        ],
-        resize_keyboard=True
-    )
-    
-    await message.answer("Панель администратора. Выберите раздел:", reply_markup=keyboard)
-    await state.set_state(AdminStates.MAIN_MENU)
+    try:
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="👥 Пользователи"), KeyboardButton(text="🔧 Категории")],
+                [KeyboardButton(text="🏙️ Города"), KeyboardButton(text="📋 Заявки")],
+                [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="🤖 Демо-генерация")],
+                [KeyboardButton(text="🔙 Выйти из админ-панели")]
+            ],
+            resize_keyboard=True
+        )
+        
+        await message.answer("Панель администратора. Выберите раздел:", reply_markup=keyboard)
+        await state.set_state(AdminStates.MAIN_MENU)
+    except Exception as e:
+        logger.error(f"Ошибка в show_admin_menu: {e}")
+        await message.answer("Произошла ошибка при отображении меню администратора.")
 
 # Обработчик выхода из админ-панели
 async def exit_admin_panel(message: types.Message, state: FSMContext) -> None:
     """Выход из админ-панели"""
-    await show_main_menu(message, state)
+    try:
+        await show_main_menu(message, state)
+    except Exception as e:
+        logger.error(f"Ошибка в exit_admin_panel: {e}")
+        await message.answer("Произошла ошибка при выходе из панели администратора.")
 
 # Обработчик раздела категорий
 async def admin_categories(message: types.Message, state: FSMContext) -> None:
@@ -105,14 +113,19 @@ async def admin_categories(message: types.Message, state: FSMContext) -> None:
 # Обработчик добавления новой категории
 async def admin_add_category(message: types.Message, state: FSMContext) -> None:
     """Запрашивает название новой категории"""
-    await message.answer(
-        "Введите название новой категории услуг:",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🔙 Назад в админ-меню")]],
-            resize_keyboard=True
+    try:
+        await message.answer(
+            "Введите название новой категории услуг:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="🔙 Назад в админ-меню")]],
+                resize_keyboard=True
+            )
         )
-    )
-    await state.set_state(AdminStates.ADD_CATEGORY)
+        await state.set_state(AdminStates.ADD_CATEGORY)
+    except Exception as e:
+        logger.error(f"Ошибка в admin_add_category: {e}")
+        await message.answer("Произошла ошибка. Пожалуйста, попробуйте позже.")
+        await state.set_state(AdminStates.MAIN_MENU)
 
 # Обработчик сохранения новой категории
 async def admin_save_category(message: types.Message, state: FSMContext) -> None:
@@ -121,9 +134,9 @@ async def admin_save_category(message: types.Message, state: FSMContext) -> None
         await show_admin_menu(message, state)
         return
     
-    category_name = message.text.strip()
-    
     try:
+        category_name = message.text.strip()
+        
         with get_session() as session:
             # Проверяем, существует ли уже такая категория
             existing_category = session.query(Category).filter(Category.name == category_name).first()
