@@ -63,14 +63,14 @@ async def start_command(update: types.Message, state: FSMContext) -> None:
         
         # Создаем клавиатуру
         keyboard = [
-            [KeyboardButton("👤 Мой профиль")],
-            [KeyboardButton("📋 Мои заявки")],
-            [KeyboardButton("⚙️ Настройки")],
-            [KeyboardButton("🔙 Вернуться в главное меню")]
+            [KeyboardButton(text="👤 Мой профиль")],
+            [KeyboardButton(text="📋 Мои заявки")],
+            [KeyboardButton(text="⚙️ Настройки")],
+            [KeyboardButton(text="🔙 Вернуться в главное меню")]
         ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
         
-        await update.answer(
+        await update.reply(
             welcome_text,
             reply_markup=reply_markup
         )
@@ -79,7 +79,7 @@ async def start_command(update: types.Message, state: FSMContext) -> None:
         
     except Exception as e:
         logger.error(f"Ошибка в start_command: {e}")
-        await update.answer(
+        await update.reply(
             "Произошла ошибка при запуске бота. Пожалуйста, попробуйте позже или обратитесь к администратору."
         )
         await state.clear()
