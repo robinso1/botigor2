@@ -206,6 +206,17 @@ async def profile_menu(update: types.Message, state: FSMContext) -> None:
 async def settings_menu(update: types.Message, state: FSMContext) -> None:
     """Показывает меню настроек"""
     try:
+        user = update.from_user
+        session = get_session()
+        user_service = UserService(session)
+        
+        # Получаем пользователя из БД
+        db_user = user_service.get_user_by_telegram_id(user.id)
+        if not db_user:
+            await update.answer("Пользователь не найден. Пожалуйста, используйте /start для регистрации.")
+            await state.set_state(UserStates.MAIN_MENU)
+            return
+        
         # Создаем клавиатуру
         keyboard = [
             ["🔔 Уведомления"],
@@ -213,11 +224,14 @@ async def settings_menu(update: types.Message, state: FSMContext) -> None:
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
+        # Получаем текущие настройки уведомлений
+        notifications_enabled = db_user.notifications_enabled if hasattr(db_user, 'notifications_enabled') else True
+        
         # Текст с описанием настроек
         settings_text = (
             "⚙️ *Настройки*\n\n"
             "Здесь вы можете настроить параметры работы бота:\n\n"
-            "🔔 *Уведомления* - настройка уведомлений о новых заявках\n"
+            f"🔔 *Уведомления* - {'включены' if notifications_enabled else 'выключены'}\n"
         )
         
         await update.answer(
@@ -591,6 +605,8 @@ async def save_phone(update: types.Message, state: FSMContext) -> None:
 async def my_requests(update: types.Message, state: FSMContext, filter_type: str = "all") -> None:
     """Показывает список заявок пользователя"""
     try:
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        
         user = update.from_user
         session = get_session()
         request_service = RequestService(session)
@@ -654,9 +670,9 @@ async def my_requests(update: types.Message, state: FSMContext, filter_type: str
             status_emoji = "🆕" if dist.status == "отправлено" else "✅" if dist.status == "принято" else "❌"
             category_name = request.category.name if request.category else "Без категории"
             button_text = f"{status_emoji} {category_name} - {request.client_name}"
-            inline_keyboard.append([InlineKeyboardButton(button_text, callback_data=f"show_request_{dist.id}")])
+            inline_keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"show_request_{dist.id}")])
         
-        inline_markup = InlineKeyboardMarkup(inline_keyboard)
+        inline_markup = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
         
         # Определяем заголовок в зависимости от фильтра
         title = "Все заявки"

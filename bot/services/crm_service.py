@@ -354,28 +354,37 @@ async def send_request_to_crm(request: Request) -> bool:
     Returns:
         bool: True, если заявка успешно отправлена, иначе False
     """
-    # Подготавливаем данные заявки
-    request_data = {
-        "id": request.id,
-        "client_name": request.client_name,
-        "client_phone": request.client_phone,
-        "description": request.description,
-        "status": request.status.value if request.status else None,
-        "is_demo": request.is_demo,
-        "area": request.area,
-        "address": request.address,
-        "estimated_cost": request.estimated_cost,
-        "created_at": request.created_at.isoformat() if request.created_at else None,
-        "category_name": request.category.name if request.category else None,
-        "city_name": request.city.name if request.city else None,
-        "extra_data": request.extra_data
-    }
-    
-    # Отправляем заявку в Битрикс24
-    bitrix_result = await send_to_crm(request_data, "bitrix24")
-    
-    # Отправляем заявку в AmoCRM
-    amo_result = await send_to_crm(request_data, "amocrm")
-    
-    # Возвращаем True, если заявка успешно отправлена хотя бы в одну CRM
-    return bitrix_result or amo_result 
+    try:
+        # Проверяем, является ли заявка демо-заявкой
+        if request.is_demo:
+            logger.info(f"Заявка #{request.id} является демо-заявкой, отправка в CRM пропущена")
+            return True
+        
+        # Подготавливаем данные заявки
+        request_data = {
+            "id": request.id,
+            "client_name": request.client_name,
+            "client_phone": request.client_phone,
+            "description": request.description,
+            "status": request.status.value if request.status else None,
+            "is_demo": request.is_demo,
+            "area": request.area,
+            "address": request.address,
+            "estimated_cost": request.estimated_cost,
+            "created_at": request.created_at.isoformat() if request.created_at else None,
+            "category_name": request.category.name if request.category else None,
+            "city_name": request.city.name if request.city else None,
+            "extra_data": request.extra_data
+        }
+        
+        # Отправляем заявку в Битрикс24
+        bitrix_result = await send_to_crm(request_data, "bitrix24")
+        
+        # Отправляем заявку в AmoCRM
+        amo_result = await send_to_crm(request_data, "amocrm")
+        
+        # Возвращаем True, если заявка успешно отправлена хотя бы в одну CRM
+        return bitrix_result or amo_result
+    except Exception as e:
+        logger.error(f"Ошибка при отправке заявки #{request.id} в CRM: {e}")
+        return False 

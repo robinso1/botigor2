@@ -109,47 +109,74 @@ def initialize_database() -> None:
     try:
         # Создаем категории, если их нет
         for category_data in DEFAULT_CATEGORIES:
-            category_name = category_data["name"]
+            # Проверяем, является ли category_data строкой или словарем
+            if isinstance(category_data, str):
+                category_name = category_data
+                category_description = ""
+                is_active = True
+                subcategories = []
+            else:
+                category_name = category_data["name"]
+                category_description = category_data.get("description", "")
+                is_active = category_data.get("is_active", True)
+                subcategories = category_data.get("subcategories", [])
+            
             category = session.query(Category).filter(Category.name == category_name).first()
             
             if not category:
                 category = Category(
                     name=category_name,
-                    description=category_data.get("description", ""),
-                    is_active=category_data.get("is_active", True)
+                    description=category_description,
+                    is_active=is_active
                 )
                 session.add(category)
                 session.flush()  # Чтобы получить ID категории
                 
                 # Создаем подкатегории, если они есть
-                subcategories = category_data.get("subcategories", [])
                 for subcat_data in subcategories:
-                    subcat_name = subcat_data["name"]
+                    if isinstance(subcat_data, str):
+                        subcat_name = subcat_data
+                        subcat_description = ""
+                        subcat_is_active = True
+                    else:
+                        subcat_name = subcat_data["name"]
+                        subcat_description = subcat_data.get("description", "")
+                        subcat_is_active = subcat_data.get("is_active", True)
+                    
                     subcategory = session.query(Category).filter(Category.name == subcat_name).first()
                     
                     if not subcategory:
                         subcategory = Category(
                             name=subcat_name,
-                            description=subcat_data.get("description", ""),
-                            is_active=subcat_data.get("is_active", True),
+                            description=subcat_description,
+                            is_active=subcat_is_active,
                             parent_id=category.id
                         )
                         session.add(subcategory)
         
         # Создаем города, если их нет
         for city_data in DEFAULT_CITIES:
-            city_name = city_data["name"]
+            # Проверяем, является ли city_data строкой или словарем
+            if isinstance(city_data, str):
+                city_name = city_data
+                is_active = True
+                phone_prefixes = CITY_PHONE_PREFIXES.get(city_name, [])
+            else:
+                city_name = city_data["name"]
+                is_active = city_data.get("is_active", True)
+                phone_prefixes = city_data.get("phone_prefixes", CITY_PHONE_PREFIXES.get(city_name, []))
+            
             city = session.query(City).filter(City.name == city_name).first()
             
             if not city:
                 city = City(
                     name=city_name,
-                    is_active=city_data.get("is_active", True)
+                    is_active=is_active
                 )
                 
                 # Добавляем префиксы телефонов, если они есть
-                if "phone_prefixes" in city_data:
-                    city.set_phone_prefixes(city_data["phone_prefixes"])
+                if phone_prefixes:
+                    city.set_phone_prefixes(phone_prefixes)
                     
                 session.add(city)
         

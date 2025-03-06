@@ -20,7 +20,7 @@ from bot.handlers.admin_handlers_aiogram import (
     admin_categories, admin_add_category, admin_save_category, admin_toggle_category,
     admin_cities, admin_add_city, admin_save_city, admin_toggle_city,
     admin_demo_generation, admin_generate_demo_request, admin_stats, admin_demo_stats,
-    AdminStates, is_admin
+    create_test_data, AdminStates, is_admin
 )
 from bot.handlers.help_handlers import help_command
 from bot.handlers.error_handlers import register_error_handlers
@@ -74,6 +74,9 @@ def setup_handlers() -> Router:
     # Обработчики для админ-панели
     router.message.register(show_admin_menu, F.text == "🔙 Назад в админ-меню", StateFilter(*AdminStates.states))
     router.message.register(exit_admin_panel, F.text == "🔙 Выйти из админ-панели", StateFilter(*AdminStates.states))
+    
+    # Обработчик для создания тестовых данных
+    router.message.register(create_test_data, F.text == "🔄 Создать тестовые данные", StateFilter(AdminStates.MAIN_MENU))
     
     # Обработчики для управления категориями
     router.message.register(admin_categories, F.text == "🔧 Категории", StateFilter(AdminStates.MAIN_MENU))

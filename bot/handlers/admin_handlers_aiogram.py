@@ -53,15 +53,45 @@ async def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 # Обработчик команды /admin
-async def admin_command(message: types.Message, state: FSMContext) -> None:
+async def admin_command(update: types.Message, state: FSMContext) -> None:
     """Обработчик команды /admin"""
-    user_id = message.from_user.id
-    
-    if not await is_admin(user_id):
-        await message.answer("У вас нет доступа к панели администратора.")
-        return
-    
-    await show_admin_menu(message, state)
+    try:
+        user = update.from_user
+        
+        # Проверяем, является ли пользователь администратором
+        if not is_admin(user.id):
+            await update.answer(
+                "У вас нет прав для доступа к административной панели."
+            )
+            return
+        
+        # Создаем клавиатуру для админ-панели
+        keyboard = [
+            ["🔧 Категории", "🏙️ Города"],
+            ["🤖 Демо-генерация", "📊 Статистика"],
+            ["🔄 Создать тестовые данные"],
+            ["🔙 Выйти из админ-панели"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        # Отправляем приветственное сообщение
+        await update.answer(
+            "👨‍💼 *Административная панель*\n\n"
+            "Добро пожаловать в панель администратора бота!\n\n"
+            "Здесь вы можете управлять категориями, городами, "
+            "настройками демо-генерации и просматривать статистику.",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        
+        # Устанавливаем состояние
+        await state.set_state(AdminStates.MAIN_MENU)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в admin_command: {e}")
+        await update.answer(
+            "Произошла ошибка при открытии административной панели. Пожалуйста, попробуйте позже."
+        )
 
 # Показать главное меню администратора
 async def show_admin_menu(message: types.Message, state: FSMContext) -> None:
@@ -511,6 +541,90 @@ async def admin_stats(message: types.Message, state: FSMContext) -> None:
         logger.error(f"Ошибка в admin_stats: {e}")
         await message.answer("Произошла ошибка при получении статистики.")
         await show_admin_menu(message, state)
+
+# Функция для создания тестовых данных
+async def create_test_data(update: types.Message, state: FSMContext) -> None:
+    """Создает тестовые данные (города и категории)"""
+    try:
+        user = update.from_user
+        
+        # Проверяем, является ли пользователь администратором
+        if not is_admin(user.id):
+            await update.answer(
+                "У вас нет прав для доступа к административной панели."
+            )
+            return
+        
+        # Создаем тестовые категории
+        session = get_session()
+        
+        # Проверяем, есть ли уже категории
+        categories_count = session.query(func.count(Category.id)).scalar()
+        
+        if categories_count == 0:
+            # Создаем категории
+            test_categories = [
+                {"name": "Сантехника", "description": "Услуги сантехника", "is_active": True},
+                {"name": "Электрика", "description": "Услуги электрика", "is_active": True},
+                {"name": "Натяжные потолки", "description": "Установка натяжных потолков", "is_active": True},
+                {"name": "Ремонт квартир под ключ", "description": "Комплексный ремонт квартир", "is_active": True},
+                {"name": "Дизайн интерьера", "description": "Услуги дизайнера интерьера", "is_active": True}
+            ]
+            
+            for cat_data in test_categories:
+                category = Category(
+                    name=cat_data["name"],
+                    description=cat_data["description"],
+                    is_active=cat_data["is_active"]
+                )
+                session.add(category)
+            
+            session.commit()
+            logger.info(f"Создано {len(test_categories)} тестовых категорий")
+        
+        # Проверяем, есть ли уже города
+        cities_count = session.query(func.count(City.id)).scalar()
+        
+        if cities_count == 0:
+            # Создаем города
+            test_cities = [
+                {"name": "Москва", "is_active": True, "phone_prefixes": ["495", "499"]},
+                {"name": "Санкт-Петербург", "is_active": True, "phone_prefixes": ["812"]},
+                {"name": "Екатеринбург", "is_active": True, "phone_prefixes": ["343"]},
+                {"name": "Новосибирск", "is_active": True, "phone_prefixes": ["383"]},
+                {"name": "Казань", "is_active": True, "phone_prefixes": ["843"]}
+            ]
+            
+            for city_data in test_cities:
+                city = City(
+                    name=city_data["name"],
+                    is_active=city_data["is_active"]
+                )
+                
+                if "phone_prefixes" in city_data:
+                    city.set_phone_prefixes(city_data["phone_prefixes"])
+                
+                session.add(city)
+            
+            session.commit()
+            logger.info(f"Создано {len(test_cities)} тестовых городов")
+        
+        # Отправляем сообщение об успешном создании тестовых данных
+        await update.answer(
+            f"✅ Тестовые данные успешно созданы!\n\n"
+            f"Категории: {categories_count == 0 and len(test_categories) or 'уже существуют'}\n"
+            f"Города: {cities_count == 0 and len(test_cities) or 'уже существуют'}"
+        )
+        
+        # Возвращаемся в главное меню админ-панели
+        await state.set_state(AdminStates.MAIN_MENU)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в create_test_data: {e}")
+        await update.answer(
+            "Произошла ошибка при создании тестовых данных. Пожалуйста, попробуйте позже."
+        )
+        await state.set_state(AdminStates.MAIN_MENU)
 
 # Функция для регистрации обработчиков администратора
 def register_admin_handlers(router: Router) -> None:
