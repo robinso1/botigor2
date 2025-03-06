@@ -31,11 +31,11 @@ def setup_handlers() -> Router:
     """
     router = Router()
     
-    # Регистрация обработчиков команд
+    # Регистрация обработчиков команд (доступны в любом состоянии)
     router.message.register(start_command, CommandStart(), StateFilter(default_state))
-    router.message.register(show_main_menu, Command("menu"))
-    router.message.register(help_command, Command("help"))
-    router.message.register(admin_command, Command("admin"))
+    router.message.register(show_main_menu, Command("menu"), StateFilter(default_state))
+    router.message.register(help_command, Command("help"), StateFilter(default_state))
+    router.message.register(admin_command, Command("admin"), StateFilter(default_state))
     
     # Обработчики для главного меню
     router.message.register(profile_menu, F.text == "👤 Мой профиль", StateFilter(UserStates.MAIN_MENU))
@@ -48,10 +48,8 @@ def setup_handlers() -> Router:
     router.message.register(edit_phone, F.text == "📱 Изменить телефон", StateFilter(UserStates.PROFILE_MENU))
     router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.PROFILE_MENU))
     
-    # Обработчики для выбора категорий
+    # Обработчики для выбора категорий и городов
     router.message.register(toggle_category, StateFilter(UserStates.SELECTING_CATEGORIES))
-    
-    # Обработчики для выбора городов
     router.message.register(toggle_city, StateFilter(UserStates.SELECTING_CITIES))
     
     # Обработчики для изменения телефона
@@ -74,8 +72,8 @@ def setup_handlers() -> Router:
     router.callback_query.register(lambda c, state: my_requests(c.message, state), F.data == "back_to_requests")
     
     # Обработчики для админ-панели
-    router.message.register(show_admin_menu, F.text == "🔙 Назад в админ-меню", StateFilter(*AdminStates))
-    router.message.register(exit_admin_panel, F.text == "🔙 Выйти из админ-панели", StateFilter(*AdminStates))
+    router.message.register(show_admin_menu, F.text == "🔙 Назад в админ-меню", StateFilter(*AdminStates.states))
+    router.message.register(exit_admin_panel, F.text == "🔙 Выйти из админ-панели", StateFilter(*AdminStates.states))
     
     # Обработчики для управления категориями
     router.message.register(admin_categories, F.text == "🔧 Категории", StateFilter(AdminStates.MAIN_MENU))
@@ -99,4 +97,4 @@ def setup_handlers() -> Router:
     # Регистрация обработчиков ошибок
     register_error_handlers(router)
     
-    return router 
+    return router

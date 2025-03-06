@@ -7,6 +7,7 @@ from typing import Dict, Any, Callable, Awaitable, Union, Optional
 from aiogram import Router, types, F
 from aiogram.types import ErrorEvent
 from aiogram.exceptions import TelegramAPIError
+from aiogram.fsm.storage.base import StorageError
 
 from config import ADMIN_IDS
 
@@ -30,33 +31,38 @@ async def error_handler(error: ErrorEvent) -> None:
     logger.error(error_msg)
     logger.error(traceback.format_exc())
     
+    # Определяем тип ошибки и соответствующее сообщение
+    user_message = "Произошла ошибка при обработке вашего запроса. Пожалуйста, попробуйте позже."
+    
+    if isinstance(exception, StorageError):
+        user_message = "Произошла ошибка при обработке состояния. Пожалуйста, начните сначала с команды /start"
+    elif isinstance(exception, TelegramAPIError):
+        user_message = "Произошла ошибка при отправке сообщения. Пожалуйста, попробуйте позже."
+    
     # Пытаемся отправить сообщение пользователю
     try:
-        # Если это сообщение
         if isinstance(update, types.Message):
-            await update.answer(
-                "Произошла ошибка при обработке вашего сообщения. "
-                "Пожалуйста, попробуйте позже или обратитесь к администратору."
-            )
-        # Если это callback_query
+            await update.answer(user_message)
         elif isinstance(update, types.CallbackQuery):
-            await update.answer(
-                "Произошла ошибка при обработке вашего запроса. "
-                "Пожалуйста, попробуйте позже или обратитесь к администратору.",
-                show_alert=True
-            )
+            await update.answer(user_message, show_alert=True)
+            await update.message.edit_text(user_message)
     except Exception as e:
         logger.error(f"Ошибка при отправке сообщения об ошибке: {e}")
     
     # Отправляем уведомление администраторам
     try:
         # Формируем подробное сообщение для администраторов
+        trace = traceback.format_exc()
+        # Ограничиваем длину трейса до 300 символов
+        if len(trace) > 300:
+            trace = trace[:297] + "..."
+        
         admin_msg = (
             f"❌ *Ошибка в боте*\n\n"
             f"*Тип ошибки:* `{type(exception).__name__}`\n"
             f"*Сообщение:* `{str(exception)}`\n\n"
-            f"*Обновление:* `{update}`\n\n"
-            f"*Трассировка:*\n`{traceback.format_exc()[:1000]}`"
+            f"*Обновление:* `{str(update)[:100]}`\n\n"
+            f"*Трассировка:*\n`{trace}`"
         )
         
         # Отправляем сообщение всем администраторам
