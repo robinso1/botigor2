@@ -141,7 +141,13 @@ async def profile_menu(update: types.Message, state: FSMContext) -> None:
             
             # Формируем информацию о профиле
             profile_text = f"👤 *Профиль пользователя*\n\n"
-            profile_text += f"*Имя*: {db_user.name}\n"
+            
+            # Используем first_name и last_name вместо name
+            full_name = f"{db_user.first_name or ''} {db_user.last_name or ''}".strip()
+            if not full_name:
+                full_name = db_user.username or "Не указано"
+                
+            profile_text += f"*Имя*: {full_name}\n"
             
             # Расшифровываем и маскируем телефон для отображения
             phone = "Не указан"
@@ -156,7 +162,7 @@ async def profile_menu(update: types.Message, state: FSMContext) -> None:
             profile_text += f"*Телефон*: {phone}\n\n"
             
             # Получаем выбранные категории
-            categories = user_service.get_user_categories(db_user.id)
+            categories = db_user.categories
             if categories:
                 profile_text += "*Выбранные категории*:\n"
                 for category in categories:
@@ -165,7 +171,7 @@ async def profile_menu(update: types.Message, state: FSMContext) -> None:
                 profile_text += "*Выбранные категории*: Не выбраны\n"
             
             # Получаем выбранные города
-            cities = user_service.get_user_cities(db_user.id)
+            cities = db_user.cities
             if cities:
                 profile_text += "\n*Выбранные города*:\n"
                 for city in cities:

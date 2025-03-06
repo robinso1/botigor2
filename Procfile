@@ -1,1 +1,1 @@
-web: python run_bot.py 
+web: python3.11 run_bot.py 

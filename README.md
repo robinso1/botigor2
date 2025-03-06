@@ -9,10 +9,13 @@
 - Демо-режим для генерации тестовых заявок
 - Административная панель для управления категориями, городами и пользователями
 - Статистика по заявкам и пользователям
+- Интеграция с CRM-системами (Bitrix24, AmoCRM)
+- Периодическая отправка информационных сообщений
+- Синхронизация с GitHub
 
 ## Требования
 
-- Python 3.9+
+- Python 3.9-3.11 (не совместимо с Python 3.12+)
 - SQLite (для локальной разработки) или PostgreSQL (для продакшн)
 - Telegram Bot API Token
 
@@ -26,10 +29,10 @@ cd botigor2
 
 2. Создайте виртуальное окружение и установите зависимости:
 ```bash
-python -m venv venv
-source venv/bin/activate  # для Linux/Mac
+python3.11 -m venv venv_py311
+source venv_py311/bin/activate  # для Linux/Mac
 # или
-venv\Scripts\activate  # для Windows
+venv_py311\Scripts\activate  # для Windows
 pip install -r requirements.txt
 ```
 
@@ -40,6 +43,8 @@ ADMIN_IDS=[your_telegram_id]
 DATABASE_URL=sqlite:///./bot.db
 SECRET_KEY=your_secret_key
 DEMO_MODE=True
+GITHUB_TOKEN=your_github_token
+GITHUB_REPO=your_username/your_repo
 ```
 
 4. Примените миграции базы данных:
