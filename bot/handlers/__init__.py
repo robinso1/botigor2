@@ -32,9 +32,9 @@ def setup_handlers() -> Router:
     router = Router()
     
     # Регистрация обработчиков команд
-    router.message.register(start_command, CommandStart(), StateFilter("*"))
-    router.message.register(show_main_menu, Command("menu"), StateFilter("*"))
-    router.message.register(help_command, Command("help"), StateFilter("*"))
+    router.message.register(start_command, CommandStart())
+    router.message.register(show_main_menu, Command("menu"))
+    router.message.register(help_command, Command("help"))
     
     # Обработчики для главного меню
     router.message.register(profile_menu, F.text == "👤 Мой профиль", StateFilter(UserStates.MAIN_MENU))
