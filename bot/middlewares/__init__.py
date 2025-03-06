@@ -33,15 +33,27 @@ class StateMiddleware:
             current_state = await state.get_state()
             logger.debug(f"Текущее состояние: {current_state}")
             
-            # Если это сообщение и содержит команду /start, сбрасываем состояние
-            if isinstance(event, Message) and event.text and event.text.startswith("/start"):
-                await state.clear()
-                logger.debug("Состояние сброшено по команде /start")
+            # Если это сообщение с командой, сбрасываем состояние
+            if isinstance(event, Message) and event.text:
+                if event.text.startswith("/"):
+                    await state.clear()
+                    logger.debug(f"Состояние сброшено по команде {event.text}")
             
-            return await handler(event, data)
+            # Выполняем обработчик
+            result = await handler(event, data)
+            
+            # Логируем новое состояние
+            new_state = await state.get_state()
+            if new_state != current_state:
+                logger.debug(f"Состояние изменено: {current_state} -> {new_state}")
+            
+            return result
         except Exception as e:
             logger.error(f"Ошибка в StateMiddleware: {e}")
-            raise
+            # Не пробрасываем ошибку дальше, чтобы бот продолжал работать
+            if isinstance(event, Message):
+                await event.answer("Произошла ошибка. Попробуйте еще раз или используйте /start для сброса.")
+            return None
 
 class DatabaseMiddleware:
     """
