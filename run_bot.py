@@ -7,6 +7,7 @@ import logging
 import traceback
 import time
 from datetime import datetime
+import asyncio
 
 # Настройка логирования
 logging.basicConfig(
@@ -32,19 +33,6 @@ def run_migrations():
         traceback.print_exc()
         return False
 
-def run_bot():
-    """Запускает бота"""
-    try:
-        logger.info("Запуск бота...")
-        from main import main
-        import asyncio
-        asyncio.run(main())
-    except Exception as e:
-        logger.error(f"Критическая ошибка при запуске бота: {e}")
-        traceback.print_exc()
-        return False
-    return True
-
 async def main():
     """Основная функция скрипта"""
     logger.info("=" * 50)
@@ -63,9 +51,14 @@ async def main():
     except Exception as e:
         logger.error(f"Критическая ошибка при запуске бота: {e}")
         traceback.print_exc()
-    
-    logger.info("Скрипт завершил работу")
+    finally:
+        logger.info("Скрипт завершил работу")
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main()) 
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен пользователем")
+    except Exception as e:
+        logger.error(f"Необработанная ошибка: {e}")
+        traceback.print_exc() 
