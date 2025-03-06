@@ -22,6 +22,8 @@ wheels/
 
 # Virtual Environment
 venv/
+venv_py311/
+venv_py312/
 ENV/
 env/
 
@@ -34,6 +36,7 @@ env/
 # Database
 *.db
 *.sqlite3
+*.db.bak
 
 # Environment variables
 .env
