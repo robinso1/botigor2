@@ -60,14 +60,14 @@ async def is_admin(user_id: int) -> bool:
         return False
 
 # Обработчик команды /admin
-async def admin_command(update: types.Message, state: FSMContext) -> None:
+async def admin_command(message: types.Message, state: FSMContext) -> None:
     """Обработчик команды /admin"""
     try:
-        user = update.from_user
+        user = message.from_user
         
         # Проверяем, является ли пользователь администратором
-        if not is_admin(user.id):
-            await update.answer(
+        if not await is_admin(user.id):
+            await message.answer(
                 "У вас нет прав для доступа к административной панели."
             )
             return
@@ -82,7 +82,7 @@ async def admin_command(update: types.Message, state: FSMContext) -> None:
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
         # Отправляем приветственное сообщение
-        await update.answer(
+        await message.answer(
             "👨‍💼 *Административная панель*\n\n"
             "Добро пожаловать в панель администратора бота!\n\n"
             "Здесь вы можете управлять категориями, городами, "
@@ -96,7 +96,7 @@ async def admin_command(update: types.Message, state: FSMContext) -> None:
         
     except Exception as e:
         logger.error(f"Ошибка в admin_command: {e}")
-        await update.answer(
+        await message.answer(
             "Произошла ошибка при открытии административной панели. Пожалуйста, попробуйте позже."
         )
 

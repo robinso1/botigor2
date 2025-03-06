@@ -9,6 +9,7 @@ import time
 import asyncio
 import socket
 import signal
+import fcntl
 from datetime import datetime
 
 # Настройка логирования
@@ -22,20 +23,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Порт для проверки запущенных экземпляров
-LOCK_PORT = 12345
+# Файл блокировки
+LOCK_FILE = "/tmp/telegram_bot.lock"
 
 def is_bot_running():
     """Проверяет, запущен ли уже экземпляр бота"""
     try:
-        # Пытаемся создать сокет на указанном порту
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(('localhost', LOCK_PORT))
-        sock.listen(1)
+        # Пытаемся создать и заблокировать файл
+        lock_file = open(LOCK_FILE, "w")
+        fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        
         # Если удалось, значит другой экземпляр не запущен
+        # Сохраняем файловый дескриптор, чтобы блокировка сохранялась
+        global lock_fd
+        lock_fd = lock_file
+        
+        # Записываем PID в файл блокировки
+        lock_file.write(str(os.getpid()))
+        lock_file.flush()
+        
         return False
-    except socket.error:
-        # Если не удалось, значит порт занят другим экземпляром
+    except IOError:
+        # Если не удалось, значит файл уже заблокирован другим процессом
         return True
 
 def run_migrations():
