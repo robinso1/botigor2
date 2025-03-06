@@ -100,7 +100,7 @@ class RequestService:
             )
             
             self.session.add(request)
-            await self.session.commit()
+            self.session.commit()
             
             # Отправляем данные в CRM только для реальных заявок
             if not request.is_demo:
@@ -119,7 +119,7 @@ class RequestService:
                 }
                 
                 # Отправляем данные в CRM
-                success = await send_to_crm(crm_data)
+                success = send_to_crm(crm_data)
                 if success:
                     logger.info(f"Данные заявки #{request.id} успешно отправлены в CRM")
                 else:
@@ -129,7 +129,7 @@ class RequestService:
             return request
         except Exception as e:
             logger.error(f"Ошибка при создании заявки: {e}")
-            await self.session.rollback()
+            self.session.rollback()
             return None
         
     async def update_request(self, request_id: int, data: Dict[str, Any]) -> Optional[Request]:
@@ -236,7 +236,7 @@ class RequestService:
                 
         return result
         
-    async def distribute_request(self, request_id: int) -> List[Distribution]:
+    def distribute_request(self, request_id: int) -> List[Distribution]:
         """
         Распределяет заявку между пользователями
         
@@ -246,7 +246,7 @@ class RequestService:
         Returns:
             List[Distribution]: Список созданных распределений
         """
-        request = await self.get_request(request_id)
+        request = self.session.query(Request).filter_by(id=request_id).first()
         if not request:
             logger.warning(f"Заявка #{request_id} не найдена")
             return []
@@ -306,7 +306,7 @@ class RequestService:
                 self.session.add(distribution)
                 distributions.append(distribution)
                 
-        await self.session.commit()
+        self.session.commit()
         
         logger.info(f"Заявка #{request_id} распределена между {len(distributions)} пользователями")
         return distributions

@@ -153,10 +153,10 @@ async def demo_request_generator(bot: Bot) -> None:
             
             try:
                 # Создаем заявку
-                request = await request_service.create_request(demo_data)
+                request = request_service.create_request(demo_data)
                 
                 # Распределяем заявку
-                distributions = await request_service.distribute_request(request.id)
+                distributions = request_service.distribute_request(request.id)
                 
                 logger.info(f"Создана демо-заявка: ID={request.id}, распределена {len(distributions)} пользователям")
                 
