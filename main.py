@@ -207,7 +207,10 @@ async def main():
     initialize_database()
     
     # Инициализация бота и диспетчера
-    bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
+    bot = Bot(
+        token=TELEGRAM_BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+    )
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     

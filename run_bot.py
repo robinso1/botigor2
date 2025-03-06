@@ -45,43 +45,27 @@ def run_bot():
         return False
     return True
 
-def main():
+async def main():
     """Основная функция скрипта"""
     logger.info("=" * 50)
     logger.info(f"Запуск скрипта в {datetime.now()}")
     
-    # Проверяем наличие необходимых переменных окружения
-    from config import TELEGRAM_BOT_TOKEN
-    if not TELEGRAM_BOT_TOKEN:
-        logger.error("Не указан TELEGRAM_BOT_TOKEN в переменных окружения")
-        sys.exit(1)
-    
-    # Применяем миграции
+    # Проверка и применение миграций
     if not run_migrations():
-        logger.error("Не удалось применить миграции, завершение работы")
-        sys.exit(1)
+        logger.error("Ошибка при применении миграций")
+        return
     
-    # Запускаем бота с автоматическим перезапуском при ошибках
-    max_restarts = 5
-    restart_count = 0
-    
-    while restart_count < max_restarts:
-        if restart_count > 0:
-            wait_time = min(30, 5 * restart_count)  # Увеличиваем время ожидания с каждым перезапуском
-            logger.info(f"Перезапуск бота через {wait_time} секунд (попытка {restart_count}/{max_restarts})...")
-            time.sleep(wait_time)
-        
-        if run_bot():
-            # Если бот завершился без ошибок, выходим из цикла
-            break
-        
-        restart_count += 1
-        logger.warning(f"Бот завершился с ошибкой, попытка перезапуска {restart_count}/{max_restarts}")
-    
-    if restart_count >= max_restarts:
-        logger.error(f"Достигнуто максимальное количество перезапусков ({max_restarts}), завершение работы")
+    # Запуск бота
+    try:
+        logger.info("Запуск бота...")
+        from main import main as bot_main
+        await bot_main()
+    except Exception as e:
+        logger.error(f"Критическая ошибка при запуске бота: {e}")
+        traceback.print_exc()
     
     logger.info("Скрипт завершил работу")
 
 if __name__ == "__main__":
-    main() 
+    import asyncio
+    asyncio.run(main()) 

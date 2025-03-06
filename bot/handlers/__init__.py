@@ -37,16 +37,18 @@ def setup_handlers() -> Router:
     router.message.register(help_command, Command("help"))
     
     # Обработчики для главного меню
-    router.message.register(profile_menu, F.text == "👤 Мой профиль", StateFilter(UserStates.MAIN_MENU))
-    router.message.register(lambda msg, state: my_requests(msg, state, "all"), 
-                           F.text == "📋 Мои заявки", StateFilter(UserStates.MAIN_MENU))
-    router.message.register(settings_menu, F.text == "⚙️ Настройки", StateFilter(UserStates.MAIN_MENU))
+    router.message.register(profile_menu, F.text == "👤 Мой профиль" and StateFilter(UserStates.MAIN_MENU))
+    router.message.register(
+        lambda msg, state: my_requests(msg, state, "all"),
+        F.text == "📋 Мои заявки" and StateFilter(UserStates.MAIN_MENU)
+    )
+    router.message.register(settings_menu, F.text == "⚙️ Настройки" and StateFilter(UserStates.MAIN_MENU))
     
     # Обработчики для меню профиля
-    router.message.register(select_cities, F.text == "🏙️ Выбрать города", StateFilter(UserStates.PROFILE_MENU))
-    router.message.register(select_categories, F.text == "🔧 Выбрать категории", StateFilter(UserStates.PROFILE_MENU))
-    router.message.register(edit_phone, F.text == "📱 Изменить телефон", StateFilter(UserStates.PROFILE_MENU))
-    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(select_cities, F.text == "🏙️ Выбрать города" and StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(select_categories, F.text == "🔧 Выбрать категории" and StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(edit_phone, F.text == "📱 Изменить телефон" and StateFilter(UserStates.PROFILE_MENU))
+    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню" and StateFilter(UserStates.PROFILE_MENU))
     
     # Обработчики для выбора категорий
     router.message.register(toggle_category, StateFilter(UserStates.SELECTING_CATEGORIES))
