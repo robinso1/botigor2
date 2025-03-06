@@ -33,6 +33,10 @@ except json.JSONDecodeError:
 DEMO_MODE = os.getenv("DEMO_MODE", "False").lower() in ("true", "1", "t")
 DEMO_REQUESTS_PER_DAY = (3, 5)  # Минимальное и максимальное количество демо-заявок в день
 DEMO_PHONE_MASK_PERCENT = 60  # Процент скрытия номера телефона
+DEMO_GENERATION_INTERVALS = {
+    "min": 3 * 3600,  # 3 часа в секундах
+    "max": 6 * 3600   # 6 часов в секундах
+}  # Интервал генерации демо-заявок в часах
 
 # Настройки распределения заявок
 DEFAULT_DISTRIBUTION_INTERVAL = 3  # Интервал распределения заявок в часах

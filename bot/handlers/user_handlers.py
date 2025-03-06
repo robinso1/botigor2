@@ -5,6 +5,7 @@ from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+# from telegram.ext import ConversationHandler
 from sqlalchemy import and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,7 @@ from bot.services.user_service import UserService
 from bot.services.request_service import RequestService
 from bot.utils import encrypt_personal_data, decrypt_personal_data, mask_phone_number
 from config import ADMIN_IDS
+from bot.database.setup import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -836,61 +838,62 @@ async def show_admin_message(update: types.Message, state: FSMContext) -> None:
     await update.answer("Используйте команду /admin для доступа к админ-панели")
     await state.set_state(UserStates.MAIN_MENU)
 
-def get_user_conversation_handler() -> ConversationHandler:
-    """Возвращает обработчик диалогов для пользователя"""
-    return ConversationHandler(
-        entry_points=[
-            CommandHandler("start", start_command),
-            MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
-        ],
-        states={
-            UserStates.MAIN_MENU: [
-                MessageHandler(filters.Regex(r"^👤 Мой профиль$"), profile_menu),
-                MessageHandler(filters.Regex(r"^📋 Мои заявки$"), my_requests),
-                MessageHandler(filters.Regex(r"^⚙️ Настройки$"), settings_menu),
-                MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
-            ],
-            UserStates.PROFILE_MENU: [
-                MessageHandler(filters.Regex(r"^🏙️ Выбрать города$"), select_cities),
-                MessageHandler(filters.Regex(r"^🔧 Выбрать категории$"), select_categories),
-                MessageHandler(filters.Regex(r"^📱 Изменить телефон$"), edit_phone),
-                MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
-            ],
-            UserStates.SELECTING_CATEGORIES: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, toggle_category),
-            ],
-            UserStates.SELECTING_CITIES: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, toggle_city),
-            ],
-            UserStates.EDIT_PHONE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone),
-            ],
-            UserStates.SETTINGS_MENU: [
-                MessageHandler(filters.Regex(r"^🔔 Уведомления$"), lambda u, c: u.message.answer("Настройки уведомлений в разработке")),
-                MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
-            ],
-            UserStates.MY_REQUESTS: [
-                MessageHandler(filters.Regex(r"^📋 Все заявки$"), lambda u, c: my_requests(u, c, filter_type="all")),
-                MessageHandler(filters.Regex(r"^🆕 Новые$"), lambda u, c: my_requests(u, c, filter_type="new")),
-                MessageHandler(filters.Regex(r"^✅ Принятые$"), lambda u, c: my_requests(u, c, filter_type="accepted")),
-                MessageHandler(filters.Regex(r"^❌ Отклоненные$"), lambda u, c: my_requests(u, c, filter_type="rejected")),
-                MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
-                CallbackQueryHandler(show_request, pattern=r"^show_request_\d+$"),
-            ],
-            UserStates.REQUEST_DETAILS: [
-                CallbackQueryHandler(accept_request, pattern=r"^accept_request_\d+$"),
-                CallbackQueryHandler(reject_request, pattern=r"^reject_request_\d+$"),
-                CallbackQueryHandler(lambda u, c: my_requests(u, c), pattern=r"^back_to_requests$"),
-            ],
-        },
-        fallbacks=[
-            CommandHandler("start", start_command),
-            MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
-        ],
-        name="user_conversation",
-        persistent=False,
-    )
+# Закомментированные функции, которые использовали python-telegram-bot
+# def get_user_conversation_handler() -> ConversationHandler:
+#     """Возвращает обработчик диалогов для пользователя"""
+#     return ConversationHandler(
+#         entry_points=[
+#             CommandHandler("start", start_command),
+#             MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
+#         ],
+#         states={
+#             UserStates.MAIN_MENU: [
+#                 MessageHandler(filters.Regex(r"^👤 Мой профиль$"), profile_menu),
+#                 MessageHandler(filters.Regex(r"^📋 Мои заявки$"), my_requests),
+#                 MessageHandler(filters.Regex(r"^⚙️ Настройки$"), settings_menu),
+#                 MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
+#             ],
+#             UserStates.PROFILE_MENU: [
+#                 MessageHandler(filters.Regex(r"^🏙️ Выбрать города$"), select_cities),
+#                 MessageHandler(filters.Regex(r"^🔧 Выбрать категории$"), select_categories),
+#                 MessageHandler(filters.Regex(r"^📱 Изменить телефон$"), edit_phone),
+#                 MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
+#             ],
+#             UserStates.SELECTING_CATEGORIES: [
+#                 MessageHandler(filters.TEXT & ~filters.COMMAND, toggle_category),
+#             ],
+#             UserStates.SELECTING_CITIES: [
+#                 MessageHandler(filters.TEXT & ~filters.COMMAND, toggle_city),
+#             ],
+#             UserStates.EDIT_PHONE: [
+#                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone),
+#             ],
+#             UserStates.SETTINGS_MENU: [
+#                 MessageHandler(filters.Regex(r"^🔔 Уведомления$"), lambda u, c: u.message.answer("Настройки уведомлений в разработке")),
+#                 MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
+#             ],
+#             UserStates.MY_REQUESTS: [
+#                 MessageHandler(filters.Regex(r"^📋 Все заявки$"), lambda u, c: my_requests(u, c, filter_type="all")),
+#                 MessageHandler(filters.Regex(r"^🆕 Новые$"), lambda u, c: my_requests(u, c, filter_type="new")),
+#                 MessageHandler(filters.Regex(r"^✅ Принятые$"), lambda u, c: my_requests(u, c, filter_type="accepted")),
+#                 MessageHandler(filters.Regex(r"^❌ Отклоненные$"), lambda u, c: my_requests(u, c, filter_type="rejected")),
+#                 MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
+#                 CallbackQueryHandler(show_request, pattern=r"^show_request_\d+$"),
+#             ],
+#             UserStates.REQUEST_DETAILS: [
+#                 CallbackQueryHandler(accept_request, pattern=r"^accept_request_\d+$"),
+#                 CallbackQueryHandler(reject_request, pattern=r"^reject_request_\d+$"),
+#                 CallbackQueryHandler(lambda u, c: my_requests(u, c), pattern=r"^back_to_requests$"),
+#             ],
+#         },
+#         fallbacks=[
+#             CommandHandler("start", start_command),
+#             MessageHandler(filters.Regex(r"^🔙 Вернуться в главное меню$"), show_main_menu),
+#         ],
+#         name="user_conversation",
+#         persistent=False,
+#     )
 
-def user_conversation_handler() -> ConversationHandler:
-    """Возвращает обработчик диалога с пользователем (для совместимости)"""
-    return get_user_conversation_handler() 
+# def user_conversation_handler() -> ConversationHandler:
+#     """Возвращает обработчик диалога с пользователем (для совместимости)"""
+#     return get_user_conversation_handler() 

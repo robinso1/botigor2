@@ -37,7 +37,8 @@ def run_bot():
     try:
         logger.info("Запуск бота...")
         from main import main
-        main()
+        import asyncio
+        asyncio.run(main())
     except Exception as e:
         logger.error(f"Критическая ошибка при запуске бота: {e}")
         traceback.print_exc()

@@ -14,6 +14,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
+from aiogram.client.default import DefaultBotProperties
 
 from config import (
     TELEGRAM_BOT_TOKEN,
@@ -206,7 +207,7 @@ async def main():
     initialize_database()
     
     # Инициализация бота и диспетчера
-    bot = Bot(token=TELEGRAM_BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
+    bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     

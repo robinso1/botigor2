@@ -4,7 +4,7 @@ from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.constants import ParseMode
-from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import ContextTypes, filters
 from telegram.error import TelegramError
 
 from bot.models import get_session, User, Category, City, Request, Distribution
@@ -442,79 +442,10 @@ async def admin_add_request(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     return ADMIN_ADD_REQUEST
 
-def get_admin_conversation_handler() -> ConversationHandler:
-    """Возвращает обработчик диалога с администратором"""
-    return ConversationHandler(
-        entry_points=[CommandHandler('admin', admin_panel)],
-        states={
-            ADMIN_MAIN: [
-                MessageHandler(filters.Regex('^📊 Статистика$'), admin_stats),
-                MessageHandler(filters.Regex('^👥 Пользователи$'), admin_users),
-                MessageHandler(filters.Regex('^🏷️ Категории$'), admin_categories),
-                MessageHandler(filters.Regex('^🏙️ Города$'), admin_cities),
-                MessageHandler(filters.Regex('^📋 Заявки$'), admin_requests),
-                MessageHandler(filters.Regex('^➕ Добавить заявку$'), admin_add_request),
-                MessageHandler(filters.Regex('^🎲 Создать демо-заявку$'), admin_create_demo),
-                MessageHandler(filters.Regex('^🔙 Вернуться в главное меню$'), lambda u, c: show_main_menu(u, c)),
-                # Оставляем обработчики для callback_query для обратной совместимости
-                CallbackQueryHandler(admin_stats, pattern='^admin_stats$'),
-                CallbackQueryHandler(admin_users, pattern='^admin_users$'),
-                CallbackQueryHandler(admin_categories, pattern='^admin_categories$'),
-                CallbackQueryHandler(admin_cities, pattern='^admin_cities$'),
-                CallbackQueryHandler(admin_requests, pattern='^admin_requests$'),
-                CallbackQueryHandler(admin_add_request, pattern='^admin_add_request$'),
-                CallbackQueryHandler(admin_create_demo, pattern='^admin_create_demo$'),
-                CallbackQueryHandler(lambda u, c: show_main_menu(u, c), pattern='^back_to_main$'),
-            ],
-            ADMIN_STATS: [
-                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
-                CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
-            ],
-            ADMIN_USERS: [
-                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
-                CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
-            ],
-            ADMIN_CATEGORIES: [
-                MessageHandler(filters.Regex('^➕ Добавить категорию$'), admin_add_category),
-                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
-                CallbackQueryHandler(admin_add_category, pattern="^admin_add_category$"),
-                CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
-            ],
-            ADMIN_ADD_CATEGORY: [
-                MessageHandler(filters.Regex('^🔙 Отмена$'), admin_categories),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_category),
-                CallbackQueryHandler(admin_categories, pattern="^back_to_categories$"),
-            ],
-            ADMIN_CITIES: [
-                MessageHandler(filters.Regex('^➕ Добавить город$'), admin_add_city),
-                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
-                CallbackQueryHandler(admin_add_city, pattern="^admin_add_city$"),
-                CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
-            ],
-            ADMIN_ADD_CITY: [
-                MessageHandler(filters.Regex('^🔙 Отмена$'), admin_cities),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_city),
-                CallbackQueryHandler(admin_cities, pattern="^back_to_cities$"),
-            ],
-            ADMIN_REQUESTS: [
-                MessageHandler(filters.Regex('^➕ Добавить заявку$'), admin_add_request),
-                MessageHandler(filters.Regex('^🎲 Создать демо-заявку$'), admin_create_demo),
-                MessageHandler(filters.Regex('^🔙 Вернуться в админ-панель$'), admin_panel),
-                CallbackQueryHandler(admin_add_request, pattern="^admin_add_request$"),
-                CallbackQueryHandler(admin_create_demo, pattern="^admin_create_demo$"),
-                CallbackQueryHandler(admin_panel, pattern="^back_to_admin$"),
-            ],
-            ADMIN_ADD_REQUEST: [
-                MessageHandler(filters.Regex('^🔙 Отмена$'), admin_requests),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: admin_save_city(u, c)),  # Заглушка, нужно реализовать
-                CallbackQueryHandler(admin_requests, pattern="^back_to_requests$"),
-            ],
-        },
-        fallbacks=[CommandHandler('admin', admin_panel), CommandHandler('start', lambda u, c: show_main_menu(u, c))],
-        name="admin_conversation",
-        persistent=False
-    )
+def get_admin_conversation_handler():
+    """Возвращает обработчик диалогов для администратора"""
+    return None
 
-def admin_conversation_handler() -> ConversationHandler:
+def admin_conversation_handler():
     """Возвращает обработчик диалога с администратором (для совместимости)"""
-    return get_admin_conversation_handler()
+    return None
