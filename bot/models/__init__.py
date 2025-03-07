@@ -12,7 +12,12 @@ from bot.models.models import (
     get_session,
     ServicePackage,
     UserStatistics,
-    SubCategory
+    SubCategory,
+    user_category,
+    user_city,
+    user_subcategory,
+    request_subcategory,
+    request_package
 )
 
 __all__ = [
@@ -29,5 +34,10 @@ __all__ = [
     'get_session',
     'ServicePackage',
     'UserStatistics',
-    'SubCategory'
+    'SubCategory',
+    'user_category',
+    'user_city',
+    'user_subcategory',
+    'request_subcategory',
+    'request_package'
 ] 
