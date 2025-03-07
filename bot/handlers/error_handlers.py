@@ -3,10 +3,11 @@
 """
 import logging
 import traceback
-from typing import Dict, Any, Callable, Awaitable, Union, Optional
-from aiogram import Router, types, F
-from aiogram.types import ErrorEvent
+from typing import Any, Dict, Union
+from aiogram import Router
+from aiogram.types import ErrorEvent, Update
 from aiogram.exceptions import TelegramAPIError
+from aiogram.handlers import ErrorHandler
 
 from config import ADMIN_IDS
 
@@ -19,63 +20,132 @@ async def error_handler(error: ErrorEvent) -> None:
     Args:
         error: Объект ошибки
     """
-    # Получаем информацию об ошибке
-    exception = error.exception
-    update = error.update
-    
-    # Формируем сообщение об ошибке
-    error_msg = f"Ошибка при обработке обновления {update}:\n{exception}"
-    
-    # Логируем ошибку
-    logger.error(error_msg)
-    logger.error(traceback.format_exc())
-    
-    # Определяем тип ошибки и соответствующее сообщение
-    user_message = "Произошла ошибка при обработке вашего запроса. Пожалуйста, попробуйте позже."
-    
-    if "storage" in str(exception).lower() or "state" in str(exception).lower():
-        user_message = "Произошла ошибка при обработке состояния. Пожалуйста, начните сначала с команды /start"
-    elif isinstance(exception, TelegramAPIError):
-        user_message = "Произошла ошибка при отправке сообщения. Пожалуйста, попробуйте позже."
-    
-    # Пытаемся отправить сообщение пользователю
     try:
-        if isinstance(update, types.Message):
-            await update.answer(user_message)
-        elif isinstance(update, types.CallbackQuery):
-            await update.answer(user_message, show_alert=True)
-            await update.message.edit_text(user_message)
-    except Exception as e:
-        logger.error(f"Ошибка при отправке сообщения об ошибке: {e}")
-    
-    # Отправляем уведомление администраторам
-    try:
-        # Формируем подробное сообщение для администраторов
-        trace = traceback.format_exc()
-        # Ограничиваем длину трейса до 300 символов
-        if len(trace) > 300:
-            trace = trace[:297] + "..."
+        # Получаем информацию об ошибке
+        update = error.update
+        exception = error.exception
         
-        admin_msg = (
-            f"❌ *Ошибка в боте*\n\n"
-            f"*Тип ошибки:* `{type(exception).__name__}`\n"
-            f"*Сообщение:* `{str(exception)}`\n\n"
-            f"*Обновление:* `{str(update)[:100]}`\n\n"
-            f"*Трассировка:*\n`{trace}`"
-        )
+        # Логируем ошибку
+        logger.error(f"Ошибка при обработке обновления {update}: {exception}")
+        logger.error(traceback.format_exc())
         
-        # Отправляем сообщение всем администраторам
-        for admin_id in ADMIN_IDS:
+        # Определяем тип обновления и пользователя
+        user_id = None
+        chat_id = None
+        
+        if isinstance(update, Update):
+            if update.message:
+                user_id = update.message.from_user.id
+                chat_id = update.message.chat.id
+            elif update.callback_query:
+                user_id = update.callback_query.from_user.id
+                chat_id = update.callback_query.message.chat.id
+        
+        # Отправляем сообщение пользователю
+        if chat_id:
             try:
-                await error.bot.send_message(
-                    admin_id,
-                    admin_msg,
-                    parse_mode="Markdown"
+                # Получаем бота из контекста ошибки
+                bot = error.bot
+                
+                # Отправляем сообщение пользователю
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="Произошла ошибка при обработке вашего запроса. Пожалуйста, попробуйте позже или используйте команду /start для перезапуска бота."
                 )
+                
+                # Если пользователь - администратор, отправляем детали ошибки
+                if user_id in ADMIN_IDS:
+                    error_details = f"Ошибка: {exception}\n\nТрассировка:\n{traceback.format_exc()[:1000]}..."
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"Детали ошибки (для администратора):\n\n{error_details}"
+                    )
+                
+                # Отправляем уведомление всем администраторам
+                for admin_id in ADMIN_IDS:
+                    if admin_id != user_id:  # Не отправляем дважды одному и тому же админу
+                        try:
+                            error_message = (
+                                f"⚠️ Ошибка в боте!\n\n"
+                                f"Пользователь: {user_id}\n"
+                                f"Тип ошибки: {type(exception).__name__}\n"
+                                f"Сообщение: {str(exception)}\n\n"
+                                f"Обновление: {update}"
+                            )
+                            await bot.send_message(chat_id=admin_id, text=error_message[:4000])
+                        except Exception as e:
+                            logger.error(f"Не удалось отправить уведомление администратору {admin_id}: {e}")
             except Exception as e:
-                logger.error(f"Ошибка при отправке уведомления администратору {admin_id}: {e}")
+                logger.error(f"Ошибка при отправке сообщения об ошибке: {e}")
     except Exception as e:
-        logger.error(f"Ошибка при отправке уведомления администраторам: {e}")
+        logger.critical(f"Критическая ошибка в обработчике ошибок: {e}")
+        logger.critical(traceback.format_exc())
+
+class CustomErrorHandler(ErrorHandler):
+    """Кастомный обработчик ошибок для бота"""
+    
+    async def handle(self) -> Any:
+        """Обрабатывает ошибку"""
+        try:
+            # Получаем информацию об ошибке
+            update = self.data.get("update", None)
+            exception = self.data.get("exception", None)
+            
+            # Логируем ошибку
+            logger.error(f"Ошибка при обработке обновления {update}: {exception}")
+            logger.error(traceback.format_exc())
+            
+            # Определяем тип обновления и пользователя
+            user_id = None
+            chat_id = None
+            
+            if isinstance(update, Update):
+                if update.message:
+                    user_id = update.message.from_user.id
+                    chat_id = update.message.chat.id
+                elif update.callback_query:
+                    user_id = update.callback_query.from_user.id
+                    chat_id = update.callback_query.message.chat.id
+            
+            # Отправляем сообщение пользователю
+            if chat_id:
+                try:
+                    # Получаем бота из контекста ошибки
+                    bot = self.bot
+                    
+                    # Отправляем сообщение пользователю
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text="Произошла ошибка при обработке вашего запроса. Пожалуйста, попробуйте позже или используйте команду /start для перезапуска бота."
+                    )
+                    
+                    # Если пользователь - администратор, отправляем детали ошибки
+                    if user_id in ADMIN_IDS:
+                        error_details = f"Ошибка: {exception}\n\nТрассировка:\n{traceback.format_exc()[:1000]}..."
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            text=f"Детали ошибки (для администратора):\n\n{error_details}"
+                        )
+                    
+                    # Отправляем уведомление всем администраторам
+                    for admin_id in ADMIN_IDS:
+                        if admin_id != user_id:  # Не отправляем дважды одному и тому же админу
+                            try:
+                                error_message = (
+                                    f"⚠️ Ошибка в боте!\n\n"
+                                    f"Пользователь: {user_id}\n"
+                                    f"Тип ошибки: {type(exception).__name__}\n"
+                                    f"Сообщение: {str(exception)}\n\n"
+                                    f"Обновление: {update}"
+                                )
+                                await bot.send_message(chat_id=admin_id, text=error_message[:4000])
+                            except Exception as e:
+                                logger.error(f"Не удалось отправить уведомление администратору {admin_id}: {e}")
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке сообщения об ошибке: {e}")
+        except Exception as e:
+            logger.critical(f"Критическая ошибка в обработчике ошибок: {e}")
+            logger.critical(traceback.format_exc())
 
 def register_error_handlers(router: Router) -> None:
     """
@@ -84,5 +154,8 @@ def register_error_handlers(router: Router) -> None:
     Args:
         router: Роутер для регистрации обработчиков
     """
+    # Регистрируем обработчик ошибок
     router.errors.register(error_handler)
+    
+    # Логируем регистрацию обработчиков
     logger.info("Обработчики ошибок зарегистрированы") 

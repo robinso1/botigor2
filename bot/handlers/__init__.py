@@ -1,12 +1,13 @@
 """
 Пакет с обработчиками команд бота
 """
-from aiogram import Router
+import logging
+from aiogram import Router, F
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.state import default_state
 from aiogram.filters import StateFilter
 from aiogram.filters.state import State
-from aiogram import F
+from aiogram import types
 
 from bot.handlers.user_handlers import (
     start_command, show_main_menu, profile_menu, settings_menu,
@@ -26,6 +27,8 @@ from bot.handlers.admin_handlers_aiogram import (
 from bot.handlers.help_handlers import help_command
 from bot.handlers.error_handlers import register_error_handlers
 
+logger = logging.getLogger(__name__)
+
 def setup_handlers() -> Router:
     """
     Настраивает и возвращает роутер с обработчиками команд
@@ -33,10 +36,10 @@ def setup_handlers() -> Router:
     router = Router()
     
     # Регистрация обработчиков команд (доступны в любом состоянии)
-    router.message.register(start_command, CommandStart(), StateFilter(default_state))
-    router.message.register(show_main_menu, Command("menu"), StateFilter(default_state))
-    router.message.register(help_command, Command("help"), StateFilter(default_state))
-    router.message.register(admin_command, Command("admin"), StateFilter(default_state))
+    router.message.register(start_command, CommandStart())
+    router.message.register(show_main_menu, Command("menu"))
+    router.message.register(help_command, Command("help"))
+    router.message.register(admin_command, Command("admin"))
     
     # Обработчики для главного меню
     router.message.register(profile_menu, F.text == "👤 Мой профиль", StateFilter(UserStates.MAIN_MENU))
@@ -50,58 +53,69 @@ def setup_handlers() -> Router:
     router.message.register(select_subcategories, F.text == "🔍 Выбрать подкатегории", StateFilter(UserStates.PROFILE_MENU))
     router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.PROFILE_MENU))
     
-    # Обработчики для выбора категорий и городов
+    # Обработчики для выбора категорий
     router.message.register(toggle_category, StateFilter(UserStates.SELECTING_CATEGORIES))
-    router.message.register(toggle_city, StateFilter(UserStates.SELECTING_CITIES))
+    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.SELECTING_CATEGORIES))
     
-    # Обработчики для изменения телефона
+    # Обработчики для выбора городов
+    router.message.register(toggle_city, StateFilter(UserStates.SELECTING_CITIES))
+    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.SELECTING_CITIES))
+    
+    # Обработчики для выбора подкатегорий
+    router.message.register(handle_subcategory_selection, StateFilter(UserStates.SELECTING_SUBCATEGORIES))
+    
+    # Обработчики для ввода телефона
     router.message.register(save_phone, StateFilter(UserStates.EDIT_PHONE))
+    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.EDIT_PHONE))
+    
+    # Обработчики для меню заявок
+    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.MY_REQUESTS))
     
     # Обработчики для меню настроек
     router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.SETTINGS_MENU))
     
-    # Обработчики для списка заявок
-    router.message.register(lambda msg, state: my_requests(msg, state, "all"), F.text == "📋 Все заявки", StateFilter(UserStates.MY_REQUESTS))
-    router.message.register(lambda msg, state: my_requests(msg, state, "new"), F.text == "🆕 Новые", StateFilter(UserStates.MY_REQUESTS))
-    router.message.register(lambda msg, state: my_requests(msg, state, "accepted"), F.text == "✅ Принятые", StateFilter(UserStates.MY_REQUESTS))
-    router.message.register(lambda msg, state: my_requests(msg, state, "rejected"), F.text == "❌ Отклоненные", StateFilter(UserStates.MY_REQUESTS))
-    router.message.register(show_main_menu, F.text == "🔙 Вернуться в главное меню", StateFilter(UserStates.MY_REQUESTS))
-    
-    # Обработчики для callback-запросов
-    router.callback_query.register(show_request, F.data.startswith("show_request_"))
-    router.callback_query.register(accept_request, F.data.startswith("accept_request_"))
-    router.callback_query.register(reject_request, F.data.startswith("reject_request_"))
-    router.callback_query.register(lambda c, state: my_requests(c.message, state), F.data == "back_to_requests")
-    
     # Обработчики для админ-панели
-    router.message.register(show_admin_menu, F.text == "🔙 Назад в админ-меню", StateFilter(*AdminStates.states))
-    router.message.register(exit_admin_panel, F.text == "🔙 Выйти из админ-панели", StateFilter(*AdminStates.states))
-    
-    # Обработчик для создания тестовых данных
-    router.message.register(create_test_data, F.text == "🔄 Создать тестовые данные", StateFilter(AdminStates.MAIN_MENU))
-    
-    # Обработчики для управления категориями
+    router.message.register(show_admin_menu, F.text == "🏠 Главное меню", StateFilter(AdminStates.MAIN_MENU))
     router.message.register(admin_categories, F.text == "🔧 Категории", StateFilter(AdminStates.MAIN_MENU))
-    router.message.register(admin_add_category, F.text == "➕ Добавить категорию", StateFilter(AdminStates.CATEGORIES))
-    router.message.register(admin_save_category, StateFilter(AdminStates.ADD_CATEGORY))
-    router.message.register(admin_toggle_category, StateFilter(AdminStates.CATEGORIES))
-    
-    # Обработчики для управления городами
     router.message.register(admin_cities, F.text == "🏙️ Города", StateFilter(AdminStates.MAIN_MENU))
-    router.message.register(admin_add_city, F.text == "➕ Добавить город", StateFilter(AdminStates.CITIES))
-    router.message.register(admin_save_city, StateFilter(AdminStates.ADD_CITY))
-    router.message.register(admin_toggle_city, StateFilter(AdminStates.CITIES))
+    router.message.register(admin_demo_generation, F.text == "🤖 Демо-режим", StateFilter(AdminStates.MAIN_MENU))
+    router.message.register(admin_stats, F.text == "📊 Статистика", StateFilter(AdminStates.MAIN_MENU))
+    router.message.register(create_test_data, F.text == "🧪 Создать тестовые данные", StateFilter(AdminStates.MAIN_MENU))
+    router.message.register(exit_admin_panel, F.text == "🚪 Выйти из админ-панели", StateFilter(AdminStates.MAIN_MENU))
     
-    # Обработчики для демо-генерации
-    router.message.register(admin_demo_generation, F.text == "🤖 Демо-генерация", StateFilter(AdminStates.MAIN_MENU))
+    # Обработчики для категорий в админ-панели
+    router.message.register(admin_add_category, F.text == "➕ Добавить категорию", StateFilter(AdminStates.CATEGORIES))
+    router.message.register(admin_toggle_category, F.text.startswith(("✅", "❌")), StateFilter(AdminStates.CATEGORIES))
+    router.message.register(show_admin_menu, F.text == "🔙 Назад", StateFilter(AdminStates.CATEGORIES))
+    
+    # Обработчики для добавления категории в админ-панели
+    router.message.register(admin_save_category, StateFilter(AdminStates.ADD_CATEGORY))
+    router.message.register(show_admin_menu, F.text == "🔙 Отмена", StateFilter(AdminStates.ADD_CATEGORY))
+    
+    # Обработчики для городов в админ-панели
+    router.message.register(admin_add_city, F.text == "➕ Добавить город", StateFilter(AdminStates.CITIES))
+    router.message.register(admin_toggle_city, F.text.startswith(("✅", "❌")), StateFilter(AdminStates.CITIES))
+    router.message.register(show_admin_menu, F.text == "🔙 Назад", StateFilter(AdminStates.CITIES))
+    
+    # Обработчики для добавления города в админ-панели
+    router.message.register(admin_save_city, StateFilter(AdminStates.ADD_CITY))
+    router.message.register(show_admin_menu, F.text == "🔙 Отмена", StateFilter(AdminStates.ADD_CITY))
+    
+    # Обработчики для демо-режима в админ-панели
     router.message.register(admin_generate_demo_request, F.text == "🔄 Сгенерировать заявку", StateFilter(AdminStates.DEMO_GENERATION))
     router.message.register(admin_demo_stats, F.text == "📊 Статистика демо-заявок", StateFilter(AdminStates.DEMO_GENERATION))
+    router.message.register(show_admin_menu, F.text == "🔙 Назад", StateFilter(AdminStates.DEMO_GENERATION))
     
-    # Обработчики для статистики
-    router.message.register(admin_stats, F.text == "📊 Статистика", StateFilter(AdminStates.MAIN_MENU))
+    # Обработчик для всех текстовых сообщений, если не сработал ни один из предыдущих
+    async def handle_unknown_message(message: types.Message):
+        """Обработчик для неизвестных сообщений"""
+        logger.info(f"Получено неизвестное сообщение: {message.text}")
+        await message.answer(
+            "Извините, я не понимаю эту команду. Пожалуйста, используйте кнопки меню или команду /start для начала работы."
+        )
     
-    # Обработчики для выбора подкатегорий
-    router.message.register(handle_subcategory_selection, StateFilter(UserStates.SELECTING_SUBCATEGORIES))
+    # Регистрируем обработчик для всех текстовых сообщений с низким приоритетом
+    router.message.register(handle_unknown_message, F.text)
     
     # Регистрация обработчиков ошибок
     register_error_handlers(router)
