@@ -14,7 +14,10 @@ from bot.models import (
     DistributionStatus, 
     User, 
     user_category, 
-    user_city
+    user_city,
+    Category,
+    City,
+    SubCategory
 )
 from bot.services.request_service import RequestService
 from config import (
@@ -314,4 +317,191 @@ async def cleanup_old_distributions(days: int = 30):
         
         logging.info(f"Удалено {deleted_count} старых распределений")
     except Exception as e:
-        logging.error(f"Ошибка при очистке старых распределений: {e}") 
+        logging.error(f"Ошибка при очистке старых распределений: {e}")
+
+class DistributionService:
+    """Сервис для распределения заявок"""
+    
+    def __init__(self, session: AsyncSession):
+        """Инициализация сервиса"""
+        self.session = session
+    
+    def find_matching_users(self, request: Request) -> List[User]:
+        """
+        Находит пользователей, подходящих для заявки по категории и городу,
+        а также по подкатегориям, если они указаны
+        """
+        try:
+            # Базовый запрос для поиска пользователей по категории и городу
+            query = self.session.query(User).filter(
+                User.is_active == True,
+                User.categories.any(Category.id == request.category_id),
+                User.cities.any(City.id == request.city_id)
+            )
+            
+            # Если у заявки есть подкатегории, учитываем их
+            if request.subcategories:
+                # Получаем ID подкатегорий заявки
+                subcategory_ids = [sc.id for sc in request.subcategories]
+                
+                # Фильтруем пользователей, у которых есть все подкатегории из заявки
+                for subcategory_id in subcategory_ids:
+                    query = query.filter(
+                        User.subcategories.any(SubCategory.id == subcategory_id)
+                    )
+            
+            # Получаем пользователей
+            matching_users = query.all()
+            
+            # Логируем результат
+            logger.info(f"Найдено {len(matching_users)} пользователей для заявки #{request.id}")
+            
+            return matching_users
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка при поиске подходящих пользователей для заявки #{request.id}: {e}")
+            return []
+    
+    def distribute_request(self, request: Request) -> List[Distribution]:
+        """
+        Распределяет заявку между подходящими пользователями
+        """
+        try:
+            # Находим подходящих пользователей
+            matching_users = self.find_matching_users(request)
+            
+            if not matching_users:
+                logger.warning(f"Не найдено подходящих пользователей для заявки #{request.id}")
+                return []
+            
+            # Создаем распределения
+            distributions = []
+            for user in matching_users:
+                # Проверяем, не было ли уже распределения для этого пользователя и заявки
+                existing_distribution = self.session.query(Distribution).filter(
+                    Distribution.user_id == user.id,
+                    Distribution.request_id == request.id
+                ).first()
+                
+                if existing_distribution:
+                    logger.info(f"Распределение для пользователя {user.id} и заявки #{request.id} уже существует")
+                    distributions.append(existing_distribution)
+                    continue
+                
+                # Создаем новое распределение
+                distribution = Distribution(
+                    user_id=user.id,
+                    request_id=request.id,
+                    status="отправлено",
+                    created_at=datetime.now(),
+                    expires_at=datetime.now() + timedelta(hours=24)  # Срок действия 24 часа
+                )
+                
+                self.session.add(distribution)
+                distributions.append(distribution)
+            
+            # Сохраняем изменения
+            self.session.commit()
+            
+            logger.info(f"Создано {len(distributions)} распределений для заявки #{request.id}")
+            
+            return distributions
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка при распределении заявки #{request.id}: {e}")
+            self.session.rollback()
+            return []
+    
+    def get_distribution(self, distribution_id: int) -> Optional[Distribution]:
+        """
+        Получает распределение по ID
+        """
+        try:
+            return self.session.query(Distribution).filter(
+                Distribution.id == distribution_id
+            ).first()
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка при получении распределения #{distribution_id}: {e}")
+            return None
+    
+    def update_distribution_status(self, distribution_id: int, status: str) -> bool:
+        """
+        Обновляет статус распределения
+        """
+        try:
+            distribution = self.get_distribution(distribution_id)
+            if not distribution:
+                logger.error(f"Распределение #{distribution_id} не найдено")
+                return False
+            
+            distribution.status = status
+            distribution.updated_at = datetime.now()
+            
+            self.session.commit()
+            
+            logger.info(f"Обновлен статус распределения #{distribution_id} на '{status}'")
+            
+            return True
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка при обновлении статуса распределения #{distribution_id}: {e}")
+            self.session.rollback()
+            return False
+    
+    def get_user_distributions(self, user_telegram_id: int, status: str = None) -> List[Distribution]:
+        """
+        Получает распределения пользователя
+        """
+        try:
+            # Находим пользователя по telegram_id
+            user = self.session.query(User).filter(
+                User.telegram_id == user_telegram_id
+            ).first()
+            
+            if not user:
+                logger.error(f"Пользователь с telegram_id {user_telegram_id} не найден")
+                return []
+            
+            # Базовый запрос
+            query = self.session.query(Distribution).filter(
+                Distribution.user_id == user.id
+            )
+            
+            # Если указан статус, фильтруем по нему
+            if status:
+                query = query.filter(Distribution.status == status)
+            
+            # Получаем распределения
+            distributions = query.all()
+            
+            return distributions
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка при получении распределений пользователя {user_telegram_id}: {e}")
+            return []
+    
+    def cleanup_expired_distributions(self) -> int:
+        """
+        Очищает просроченные распределения
+        """
+        try:
+            # Находим просроченные распределения
+            now = datetime.now()
+            expired_distributions = self.session.query(Distribution).filter(
+                Distribution.status == "отправлено",
+                Distribution.expires_at < now
+            ).all()
+            
+            # Обновляем статус
+            count = 0
+            for distribution in expired_distributions:
+                distribution.status = "просрочено"
+                distribution.updated_at = now
+                count += 1
+            
+            # Сохраняем изменения
+            self.session.commit()
+            
+            logger.info(f"Обновлено {count} просроченных распределений")
+            
+            return count
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка при очистке просроченных распределений: {e}")
+            self.session.rollback()
+            return 0 
