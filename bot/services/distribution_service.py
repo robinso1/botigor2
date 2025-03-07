@@ -13,8 +13,8 @@ from bot.models import (
     Distribution, 
     DistributionStatus, 
     User, 
-    UserCategory, 
-    UserCity
+    user_category, 
+    user_city
 )
 from bot.services.request_service import RequestService
 from config import (
@@ -238,11 +238,11 @@ async def get_users_for_distribution(session: AsyncSession, request: Request):
         # Получаем пользователей, которые подходят для распределения
         query = (
             select(User)
-            .join(UserCategory, User.id == UserCategory.user_id)
-            .join(UserCity, User.id == UserCity.user_id)
+            .join(user_category, User.id == user_category.c.user_id)
+            .join(user_city, User.id == user_city.c.user_id)
             .where(User.is_active == True)
-            .where(UserCategory.category_id == request.category_id)
-            .where(UserCity.city_id == request.city_id)
+            .where(user_category.c.category_id == request.category_id)
+            .where(user_city.c.city_id == request.city_id)
         )
         
         # Исключаем пользователей, которым уже была распределена заявка
