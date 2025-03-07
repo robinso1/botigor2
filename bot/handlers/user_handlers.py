@@ -618,100 +618,117 @@ async def my_requests(update: types.Message, state: FSMContext, filter_type: str
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
         
         user = update.from_user
-        session = get_session()
-        request_service = RequestService(session)
         
-        # Получаем распределения пользователя
-        distributions = request_service.get_user_distributions(user.id)
-        
-        if not distributions:
-            # Создаем клавиатуру для возврата
+        # Используем контекстный менеджер для сессии
+        with get_session() as session:
+            request_service = RequestService(session)
+            
+            # Получаем распределения пользователя
+            distributions = await request_service.get_user_distributions(user.id)
+            
+            if not distributions:
+                # Создаем клавиатуру для возврата
+                keyboard = [
+                    [KeyboardButton(text="🔙 Вернуться в главное меню")]
+                ]
+                reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+                
+                await update.answer(
+                    "У вас нет активных заявок.",
+                    reply_markup=reply_markup
+                )
+                return
+            
+            # Фильтруем распределения по статусу
+            if filter_type == "new":
+                distributions = [d for d in distributions if d.status == "отправлено"]
+            elif filter_type == "accepted":
+                distributions = [d for d in distributions if d.status == "принято"]
+            elif filter_type == "rejected":
+                distributions = [d for d in distributions if d.status == "отклонено"]
+            
+            if not distributions:
+                # Создаем клавиатуру для возврата
+                keyboard = [
+                    [KeyboardButton(text="📋 Все заявки")],
+                    [KeyboardButton(text="🔙 Вернуться в главное меню")]
+                ]
+                reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+                
+                await update.answer(
+                    f"У вас нет заявок со статусом '{filter_type}'.",
+                    reply_markup=reply_markup
+                )
+                return
+            
+            # Создаем клавиатуру для фильтрации
             keyboard = [
-                ["🔙 Вернуться в главное меню"]
+                [KeyboardButton(text="📋 Все заявки")],
+                [KeyboardButton(text="🆕 Новые"), KeyboardButton(text="✅ Принятые"), KeyboardButton(text="❌ Отклоненные")],
+                [KeyboardButton(text="🔙 Вернуться в главное меню")]
             ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+            
+            # Создаем сообщение со списком заявок
+            requests_text = f"📋 *Ваши заявки ({len(distributions)})*:\n\n"
+            
+            # Создаем инлайн-клавиатуру для просмотра заявок
+            inline_keyboard = []
+            
+            for i, distribution in enumerate(distributions, 1):
+                request = distribution.request
+                status_emoji = {
+                    "отправлено": "📤",
+                    "принято": "✅",
+                    "отклонено": "❌",
+                    "завершено": "🏁",
+                    "просрочено": "⏰"
+                }.get(distribution.status, "❓")
+                
+                # Формируем информацию о заявке
+                requests_text += f"{i}. {status_emoji} *Заявка #{request.id}*\n"
+                requests_text += f"   📅 Дата: {request.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+                requests_text += f"   🏙️ Город: {request.city.name if request.city else 'Не указан'}\n"
+                requests_text += f"   🔧 Категория: {request.category.name if request.category else 'Не указана'}\n"
+                requests_text += f"   📝 Статус: {distribution.status}\n\n"
+                
+                # Добавляем кнопку для просмотра заявки
+                inline_keyboard.append([
+                    InlineKeyboardButton(
+                        text=f"{status_emoji} Заявка #{request.id} ({distribution.status})",
+                        callback_data=f"show_request_{distribution.id}"
+                    )
+                ])
+            
+            # Добавляем кнопку "Назад"
+            inline_keyboard.append([
+                InlineKeyboardButton(
+                    text="🔙 Назад",
+                    callback_data="back_to_requests"
+                )
+            ])
+            
+            inline_markup = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
             
             await update.answer(
-                "У вас пока нет заявок. Они появятся здесь, когда будут распределены вам.",
-                reply_markup=reply_markup
+                requests_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
             )
-            await state.set_state(UserStates.MY_REQUESTS)
-            return
-        
-        # Фильтруем распределения по статусу
-        filtered_distributions = []
-        if filter_type == "new":
-            filtered_distributions = [d for d in distributions if d.status == "отправлено"]
-        elif filter_type == "accepted":
-            filtered_distributions = [d for d in distributions if d.status == "принято"]
-        elif filter_type == "rejected":
-            filtered_distributions = [d for d in distributions if d.status == "отклонено"]
-        else:  # all
-            filtered_distributions = distributions
-        
-        if not filtered_distributions:
-            # Создаем клавиатуру для фильтрации и возврата
-            keyboard = [
-                ["📋 Все заявки", "🆕 Новые"],
-                ["✅ Принятые", "❌ Отклоненные"],
-                ["🔙 Вернуться в главное меню"]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
             
+            # Отправляем инлайн-клавиатуру отдельным сообщением
             await update.answer(
-                f"У вас нет заявок с выбранным статусом ({filter_type}).",
-                reply_markup=reply_markup
+                "Выберите заявку для просмотра:",
+                reply_markup=inline_markup
             )
+            
+            # Устанавливаем состояние
             await state.set_state(UserStates.MY_REQUESTS)
-            return
-        
-        # Создаем клавиатуру для фильтрации и возврата
-        keyboard = [
-            ["📋 Все заявки", "🆕 Новые"],
-            ["✅ Принятые", "❌ Отклоненные"],
-            ["🔙 Вернуться в главное меню"]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        
-        # Создаем инлайн-клавиатуру для просмотра заявок
-        inline_keyboard = []
-        for dist in filtered_distributions[:10]:  # Ограничиваем 10 заявками
-            request = dist.request
-            status_emoji = "🆕" if dist.status == "отправлено" else "✅" if dist.status == "принято" else "❌"
-            category_name = request.category.name if request.category else "Без категории"
-            button_text = f"{status_emoji} {category_name} - {request.client_name}"
-            inline_keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"show_request_{dist.id}")])
-        
-        inline_markup = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
-        
-        # Определяем заголовок в зависимости от фильтра
-        title = "Все заявки"
-        if filter_type == "new":
-            title = "Новые заявки"
-        elif filter_type == "accepted":
-            title = "Принятые заявки"
-        elif filter_type == "rejected":
-            title = "Отклоненные заявки"
-        
-        await update.answer(
-            f"{title} ({len(filtered_distributions)}):\n"
-            "Нажмите на заявку для просмотра деталей.",
-            reply_markup=reply_markup
-        )
-        
-        await update.answer(
-            "Выберите заявку:",
-            reply_markup=inline_markup
-        )
-        
-        await state.set_state(UserStates.MY_REQUESTS)
-        
     except Exception as e:
         logger.error(f"Ошибка в my_requests: {e}")
         await update.answer(
             "Произошла ошибка при загрузке заявок. Пожалуйста, попробуйте позже."
         )
-        await state.set_state(UserStates.MAIN_MENU)
 
 async def show_request(update: types.CallbackQuery, state: FSMContext) -> None:
     """Показывает детали заявки"""
