@@ -16,12 +16,15 @@ from bot.models import (
     UserCategory, 
     UserCity
 )
+from bot.services.request_service import RequestService
 from config import (
     DEFAULT_DISTRIBUTION_INTERVAL, 
     DEFAULT_USERS_PER_REQUEST, 
     RESERVE_USERS_PER_REQUEST,
     DEFAULT_MAX_DISTRIBUTIONS
 )
+
+logger = logging.getLogger(__name__)
 
 async def process_distributions():
     """
@@ -197,43 +200,21 @@ async def distribute_request(session: AsyncSession, request_id: int):
         request_id: ID заявки
     """
     try:
-        # Получаем заявку
-        result = await session.execute(
-            select(Request).where(Request.id == request_id)
-        )
-        request = result.scalar_one_or_none()
+        # Создаем экземпляр сервиса для работы с заявками
+        request_service = RequestService(session)
         
-        if not request:
-            logging.warning(f"Заявка #{request_id} не найдена")
-            return
+        # Используем метод класса для распределения заявки
+        distributions = request_service.distribute_request(request_id)
         
-        # Проверяем, можно ли распределить заявку
-        if request.status not in (RequestStatus.NEW, RequestStatus.DISTRIBUTING):
-            logging.warning(f"Заявка #{request_id} имеет статус {request.status}, распределение невозможно")
-            return
+        if distributions:
+            logger.info(f"Заявка #{request_id} распределена между {len(distributions)} пользователями")
+        else:
+            logger.warning(f"Не удалось распределить заявку #{request_id}")
         
-        # Отмечаем заявку как распределяемую
-        request.status = RequestStatus.DISTRIBUTING
-        await session.commit()
-        
-        # Получаем пользователей, которым можно распределить заявку
-        users = await get_users_for_distribution(session, request)
-        
-        if not users:
-            logging.warning(f"Не найдено пользователей для распределения заявки #{request_id}")
-            return
-        
-        logging.info(f"Найдено {len(users)} пользователей для распределения заявки #{request_id}")
-        
-        # Создаем распределения
-        for user in users:
-            await create_distribution(session, request, user)
-        
-        await session.commit()
-        
-        logging.info(f"Заявка #{request_id} успешно распределена между {len(users)} пользователями")
+        return distributions
     except Exception as e:
-        logging.error(f"Ошибка при распределении заявки #{request_id}: {e}")
+        logger.error(f"Ошибка при распределении заявки #{request_id}: {e}")
+        return []
 
 async def get_users_for_distribution(session: AsyncSession, request: Request):
     """
