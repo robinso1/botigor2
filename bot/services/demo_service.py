@@ -3,14 +3,18 @@
 """
 import logging
 import random
+import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, and_, or_
 
 from bot.database.setup import async_session
-from bot.models import Request, RequestStatus, Category, City
+from bot.models import Request, RequestStatus, Distribution, DistributionStatus, Category, City
 from bot.services.request_service import RequestService
 from bot.utils.demo_utils import generate_demo_request
 from config import DEBUG_MODE
+
+logger = logging.getLogger(__name__)
 
 async def generate_demo_requests():
     """
