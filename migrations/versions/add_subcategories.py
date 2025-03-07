@@ -1,33 +1,38 @@
-"""Add subcategories and additional criteria
-
-Revision ID: add_subcategories
-Revises: add_expires_at_column
-Create Date: 2025-03-06 22:50:00.000000
-
+"""
+Миграция для добавления подкатегорий
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import sqlite
+from sqlalchemy.dialects import postgresql
 
-# revision identifiers, used by Alembic.
+# Идентификатор ревизии
 revision = 'add_subcategories'
+# Идентификатор предыдущей ревизии
 down_revision = 'add_expires_at_column'
-branch_labels = None
-depends_on = None
+# Дата создания
+create_date = '2023-06-15 12:00:00.000000'
 
-
-def upgrade() -> None:
+def upgrade():
+    """
+    Обновление схемы базы данных:
+    1. Создание таблицы подкатегорий
+    2. Создание таблицы связи пользователей и подкатегорий
+    3. Создание таблицы связи заявок и подкатегорий
+    4. Добавление полей для дополнительных критериев в таблицу заявок
+    """
     # Создаем таблицу подкатегорий
     op.create_table(
         'subcategories',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('name', sa.String(length=100), nullable=False),
+        sa.Column('name', sa.String(length=255), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('category_id', sa.Integer(), nullable=False),
         sa.Column('type', sa.String(length=50), nullable=False),
         sa.Column('min_value', sa.Float(), nullable=True),
         sa.Column('max_value', sa.Float(), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=True),
+        sa.Column('is_active', sa.Boolean(), nullable=False, default=True),
+        sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.text('now()')),
+        sa.Column('updated_at', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['category_id'], ['categories.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
@@ -47,24 +52,35 @@ def upgrade() -> None:
         'request_subcategory',
         sa.Column('request_id', sa.Integer(), nullable=False),
         sa.Column('subcategory_id', sa.Integer(), nullable=False),
+        sa.Column('value', sa.String(length=255), nullable=True),
         sa.ForeignKeyConstraint(['request_id'], ['requests.id'], ),
         sa.ForeignKeyConstraint(['subcategory_id'], ['subcategories.id'], ),
         sa.PrimaryKeyConstraint('request_id', 'subcategory_id')
     )
     
-    # Добавляем поля для подкатегорий в таблицу requests
+    # Добавляем поля для дополнительных критериев в таблицу заявок
     op.add_column('requests', sa.Column('area_value', sa.Float(), nullable=True))
-    op.add_column('requests', sa.Column('house_type', sa.String(length=50), nullable=True))
+    op.add_column('requests', sa.Column('house_type', sa.String(length=100), nullable=True))
     op.add_column('requests', sa.Column('has_design_project', sa.Boolean(), nullable=True))
 
-
-def downgrade() -> None:
-    # Удаляем поля из таблицы requests
+def downgrade():
+    """
+    Откат изменений:
+    1. Удаление полей для дополнительных критериев из таблицы заявок
+    2. Удаление таблицы связи заявок и подкатегорий
+    3. Удаление таблицы связи пользователей и подкатегорий
+    4. Удаление таблицы подкатегорий
+    """
+    # Удаляем поля для дополнительных критериев из таблицы заявок
     op.drop_column('requests', 'has_design_project')
     op.drop_column('requests', 'house_type')
     op.drop_column('requests', 'area_value')
     
-    # Удаляем таблицы
+    # Удаляем таблицу связи заявок и подкатегорий
     op.drop_table('request_subcategory')
+    
+    # Удаляем таблицу связи пользователей и подкатегорий
     op.drop_table('user_subcategory')
+    
+    # Удаляем таблицу подкатегорий
     op.drop_table('subcategories') 
