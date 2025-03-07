@@ -1,81 +1,86 @@
 """
-Скрипт для запуска бота в режиме отладки с расширенным логированием
+Скрипт для запуска бота с отладочной информацией
 """
 import os
 import sys
 import logging
+import asyncio
 import traceback
 from datetime import datetime
+from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram import F
+from aiogram.filters import Command, CommandStart
 
-# Настройка расширенного логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG,  # Устанавливаем уровень DEBUG для более подробного логирования
-    handlers=[
-        logging.FileHandler("debug.log"),
-        logging.StreamHandler()
-    ]
-)
+from config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, setup_logging
+from bot.database.setup import setup_database
+from bot.handlers import setup_handlers
+from bot.middlewares import setup_middlewares
+
+# Настройка логирования
 logger = logging.getLogger(__name__)
 
-# Настраиваем логирование для библиотек
-logging.getLogger('telegram').setLevel(logging.DEBUG)
-logging.getLogger('httpx').setLevel(logging.INFO)
-logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
-
-def run_migrations():
-    """Применяет миграции базы данных"""
+async def main():
+    """Основная функция"""
     try:
-        logger.info("Применение миграций базы данных...")
-        from apply_migrations import apply_migrations
-        apply_migrations()
-        logger.info("Миграции успешно применены")
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка при применении миграций: {e}")
-        traceback.print_exc()
-        return False
-
-def run_bot():
-    """Запускает бота в режиме отладки"""
-    try:
-        logger.info("Запуск бота в режиме отладки...")
+        logger.info("=" * 50)
+        logger.info(f"Запуск отладочного бота в {datetime.now()}")
         
-        # Устанавливаем переменные окружения для режима отладки
-        os.environ['DEBUG_MODE'] = 'True'
+        # Настраиваем базу данных
+        setup_database()
         
-        # Импортируем и запускаем основную функцию
-        from main import main
-        main()
+        # Создаем экземпляр бота и диспетчера
+        session = AiohttpSession()
+        bot = Bot(token=TELEGRAM_BOT_TOKEN, session=session)
+        dp = Dispatcher(storage=MemoryStorage())
+        
+        # Настраиваем обработчики и промежуточное ПО
+        router = setup_handlers()
+        setup_middlewares(router)
+        dp.include_router(router)
+        
+        # Добавляем отладочный обработчик для всех сообщений
+        @dp.message()
+        async def debug_handler(message: Message, state=None, current_state=None):
+            """Отладочный обработчик для всех сообщений"""
+            logger.info(f"DEBUG: Получено сообщение '{message.text}' от пользователя {message.from_user.id}")
+            logger.info(f"DEBUG: Текущее состояние: {current_state}")
+            
+            # Не отправляем ответ, чтобы не мешать основным обработчикам
+            pass
+        
+        # Отправляем сообщение администраторам о запуске бота
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=f"🤖 Отладочный бот запущен!\n\n📅 Дата: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                logger.info(f"Отправлено уведомление о запуске администратору {admin_id}")
+            except Exception as e:
+                logger.error(f"Не удалось отправить уведомление администратору {admin_id}: {e}")
+        
+        # Запускаем поллинг
+        logger.info("Запускаем поллинг бота...")
+        await dp.start_polling(bot)
     except Exception as e:
-        logger.error(f"Критическая ошибка при запуске бота: {e}")
+        logger.critical(f"Критическая ошибка при запуске бота: {e}")
         traceback.print_exc()
-        return False
-    return True
-
-def main():
-    """Основная функция скрипта"""
-    logger.info("=" * 50)
-    logger.info(f"Запуск бота в режиме отладки в {datetime.now()}")
-    
-    # Проверяем наличие необходимых переменных окружения
-    from config import TELEGRAM_BOT_TOKEN
-    if not TELEGRAM_BOT_TOKEN:
-        logger.error("Не указан TELEGRAM_BOT_TOKEN в переменных окружения")
-        sys.exit(1)
-    
-    # Применяем миграции
-    if not run_migrations():
-        logger.error("Не удалось применить миграции, завершение работы")
-        sys.exit(1)
-    
-    # Запускаем бота
-    if not run_bot():
-        logger.error("Не удалось запустить бота, завершение работы")
-        sys.exit(1)
-    
-    logger.info("Бот завершил работу")
-    logger.info("=" * 50)
 
 if __name__ == "__main__":
-    main() 
+    # Настраиваем логирование с уровнем DEBUG
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    try:
+        # Запускаем основную функцию
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен пользователем (Ctrl+C)")
+    except Exception as e:
+        logger.critical(f"Необработанное исключение: {e}")
+        traceback.print_exc() 
