@@ -1,3 +1,6 @@
+"""
+Инициализация моделей
+"""
 from bot.models.models import (
     Base,
     User,

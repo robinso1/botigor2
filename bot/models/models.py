@@ -35,6 +35,23 @@ request_package = Table(
     Column('package_id', Integer, ForeignKey('service_packages.id'), primary_key=True)
 )
 
+# Таблица связи пользователей и подкатегорий
+user_subcategory = Table(
+    'user_subcategory',
+    Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('subcategory_id', Integer, ForeignKey('subcategories.id'), primary_key=True)
+)
+
+# Таблица связи заявок и подкатегорий
+request_subcategory = Table(
+    'request_subcategory',
+    Base.metadata,
+    Column('request_id', Integer, ForeignKey('requests.id'), primary_key=True),
+    Column('subcategory_id', Integer, ForeignKey('subcategories.id'), primary_key=True),
+    Column('value', String(255), nullable=True)
+)
+
 class RequestStatus(enum.Enum):
     """Статусы заявок"""
     NEW = "новая"
@@ -78,7 +95,7 @@ class User(Base):
     cities = relationship("City", secondary=user_city, back_populates="users")
     distributions = relationship("Distribution", back_populates="user")
     statistics = relationship("UserStatistics", back_populates="user", uselist=False)
-    subcategories = relationship("SubCategory", secondary="user_subcategory", back_populates="users")
+    subcategories = relationship("SubCategory", secondary=user_subcategory, back_populates="users")
     
     def __repr__(self):
         return f"<User(id={self.id}, telegram_id={self.telegram_id}, username={self.username})>"
@@ -175,7 +192,7 @@ class Request(Base):
     city = relationship("City", back_populates="requests")
     distributions = relationship("Distribution", back_populates="request")
     packages = relationship("ServicePackage", secondary=request_package, back_populates="requests")
-    subcategories = relationship("SubCategory", secondary="request_subcategory")
+    subcategories = relationship("SubCategory", secondary=request_subcategory)
     
     # Дополнительные данные в формате JSON
     extra_data = Column(JSON, nullable=True)
@@ -256,26 +273,11 @@ class SubCategory(Base):
     
     # Отношения
     category = relationship("Category", back_populates="subcategories")
-    users = relationship("User", secondary="user_subcategory", back_populates="subcategories")
+    users = relationship("User", secondary=user_subcategory, back_populates="subcategories")
+    requests = relationship("Request", secondary=request_subcategory, back_populates="subcategories")
     
     def __repr__(self):
         return f"<SubCategory(id={self.id}, name='{self.name}', type='{self.type}')>"
-
-# Таблица связи пользователей и подкатегорий
-user_subcategory = Table(
-    'user_subcategory',
-    Base.metadata,
-    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
-    Column('subcategory_id', Integer, ForeignKey('subcategories.id'), primary_key=True)
-)
-
-# Таблица связи заявок и подкатегорий
-request_subcategory = Table(
-    'request_subcategory',
-    Base.metadata,
-    Column('request_id', Integer, ForeignKey('requests.id'), primary_key=True),
-    Column('subcategory_id', Integer, ForeignKey('subcategories.id'), primary_key=True)
-)
 
 # Функция для создания и инициализации базы данных
 def init_db():
