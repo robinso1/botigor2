@@ -11,7 +11,8 @@ from bot.models.models import (
     init_db,
     get_session,
     ServicePackage,
-    UserStatistics
+    UserStatistics,
+    SubCategory
 )
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     'init_db',
     'get_session',
     'ServicePackage',
-    'UserStatistics'
+    'UserStatistics',
+    'SubCategory'
 ] 
